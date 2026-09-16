@@ -15,13 +15,19 @@ function touch<T>(m: Map<string, T>, key: string, v: T) {
   if (m.size > MAX) m.delete(m.keys().next().value as string)
 }
 
+/** iframe 里那份文档的滚动：窗口本身 + 页面内部自己滚的容器（按 DOM 路径认） */
+export type FrameScroll = { x: number; y: number; els: { sel: string; top: number; left: number }[] }
+const frames = new Map<string, FrameScroll>()
+export function rememberFrameScroll(key: string, s: FrameScroll) { touch(frames, key, s) }
+export function recallFrameScroll(key: string): FrameScroll | undefined { return frames.get(key) }
+
 export function rememberScroll(key: string, top: number) { touch(scrolls, key, top) }
 export function recallScroll(key: string): number { return scrolls.get(key) || 0 }
 export function rememberEditorView(key: string, state: unknown) { if (state) touch(editorViews, key, state) }
 export function recallEditorView(key: string): unknown { return editorViews.get(key) }
-export function forgetViewState(key: string) { scrolls.delete(key); editorViews.delete(key) }
+export function forgetViewState(key: string) { scrolls.delete(key); editorViews.delete(key); frames.delete(key) }
 /** 测试用 */
-export function resetViewStateMemory() { scrolls.clear(); editorViews.clear() }
+export function resetViewStateMemory() { scrolls.clear(); editorViews.clear(); frames.clear() }
 
 /**
  * 给一个 overflow:auto 的滚动容器用：挂上时把记着的位置对回去，滚动时记下来。
