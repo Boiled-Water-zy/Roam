@@ -553,89 +553,26 @@ func (s *Service) List(ctx context.Context, dir string) ([]Worktree, error) {
 	rs := s.remote[repo.CommonDir]
 	s.mu.Unlock()
 
+	// 逐 worktree 的加工彼此独立（各写各的 w，rs 只读），并发跑：blade-agent 一个仓库 25 个
+	// worktree、每个八九条 git，串行 1.7s，/projects 整个被它压着。并发上限 4：git 起进程不算重，
+	// 但同一仓库的 index / packed-refs 锁会让更高的并发互相等
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
 	for i := range list {
 		w := &list[i]
 		w.IsMain = w.Path == repo.Root
 		if w.Prunable {
 			continue
 		}
-		// 身份（roam.* worktree config；读不到 = 外部创建 base unknown）
-		if v, e := git(ctx, w.Path, "config", "--worktree", "--get", "roam.baseref"); e == nil {
-			w.Base = strings.TrimSpace(v)
-		}
-		if v, e := git(ctx, w.Path, "config", "--worktree", "--get", "roam.startoid"); e == nil {
-			w.StartOid = strings.TrimSpace(v)
-		}
-		if v, e := git(ctx, w.Path, "config", "--worktree", "--get", "roam.createdby"); e == nil {
-			w.CreatedBy = strings.TrimSpace(v)
-		}
-		if v, e := git(ctx, w.Path, "config", "--worktree", "--get", "roam.createdat"); e == nil {
-			w.CreatedAt = strings.TrimSpace(v)
-		}
-		if v, e := git(ctx, w.Path, "config", "--worktree", "--get", "roam.adopted"); e == nil {
-			w.Adopted = strings.TrimSpace(v) == "1"
-		}
-		w.External = w.CreatedBy != "roam"
-		// 状态
-		if st, e := git(ctx, w.Path, "status", "--porcelain=v1"); e == nil && st != "" {
-			for _, l := range strings.Split(st, "\n") {
-				if strings.HasPrefix(l, "??") {
-					w.Untracked++
-				} else if strings.TrimSpace(l) != "" {
-					w.Dirty++
-				}
-			}
-		}
-		if w.Base != "" && !w.IsMain {
-			// 对比目标优先远端主干（Sync fetch 更新的 origin/<base>）：远端 PR 合并后
-			// 本地 base 没 pull 也能翻绿；无远端跟踪 ref 时退回本地 base（旧行为）。
-			target := w.Base
-			if _, e := git(ctx, w.Path, "rev-parse", "--verify", "-q", "refs/remotes/origin/"+w.Base); e == nil {
-				target = "origin/" + w.Base
-			}
-			if cnt, e := git(ctx, w.Path, "rev-list", "--left-right", "--count", target+"...HEAD"); e == nil {
-				parts := strings.Fields(cnt)
-				if len(parts) == 2 {
-					w.Behind, _ = strconv.Atoi(parts[0])
-					w.CommittedAhead, _ = strconv.Atoi(parts[1])
-				}
-			}
-			// 合入判定：横向可扩展的信号链（mergeSignals），命中即定 kind、靠前优先。
-			// 统一前置 ownWork——worktree 必须真离开建时分叉点(StartOid)才算干过活；否则
-			// 新开的空 worktree HEAD==分叉点，天然是 target 的祖先，S1 会把它秒判「已合入」。
-			// StartOid 建时锁定、不随本地 base 分支移动/删除而失真，比对本地 base ref 更稳；
-			// 老 worktree 无 StartOid 时退回「相对 target 有领先提交」兜底（空 worktree=0 不判）。
-			ownWork := w.Head != w.StartOid
-			if w.StartOid == "" {
-				ownWork = w.CommittedAhead > 0
-			}
-			if ownWork {
-				for _, sig := range mergeSignals {
-					if kind, ok := sig(ctx, w, target); ok {
-						w.MergedInto, w.MergedKind = target, kind
-						break
-					}
-				}
-			}
-			// S3 branch-gone（仅佐证）：曾有远端跟踪 ref，而最近一次 ls-remote 观测里
-			// 远端分支已不在。观测缺失（nil）时静默退化，不报 gone。
-			if w.Branch != "" && rs.heads != nil && !rs.heads[w.Branch] {
-				if _, e := git(ctx, w.Path, "rev-parse", "--verify", "-q", "refs/remotes/origin/"+w.Branch); e == nil {
-					w.RemoteGone = true
-				}
-			}
-			// 已推送：当前 HEAD 已是 origin/<branch> 的祖先（含相等）=提交都已在远端。
-			// 纯本地跟踪 ref 判定（Sync fetch 会刷新它），ref 不存在时 merge-base 报错→false。
-			if w.Branch != "" {
-				if _, e := git(ctx, w.Path, "merge-base", "--is-ancestor", "HEAD", "refs/remotes/origin/"+w.Branch); e == nil {
-					w.Pushed = true
-				}
-			}
-		}
-		if ts, e := git(ctx, w.Path, "log", "-1", "--format=%ct"); e == nil {
-			w.LastCommitAt, _ = strconv.ParseInt(strings.TrimSpace(ts), 10, 64)
-		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(w *Worktree) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			s.enrichWorktree(ctx, w, rs)
+		}(w)
 	}
+	wg.Wait()
 	s.mu.Lock()
 	s.cache[repo.CommonDir] = listCache{at: time.Now(), data: list}
 	s.mu.Unlock()
@@ -1479,4 +1416,88 @@ func dedup(in []string) []string {
 		}
 	}
 	return out
+}
+
+// enrichWorktree 给一条 worktree 补状态：身份、脏改动、相对 base 的领先/落后、合入判定、已推送、最近提交。
+// 只写自己这一条 w；rs 是本轮的远端观测（只读）。List 里并发调用。
+func (s *Service) enrichWorktree(ctx context.Context, w *Worktree, rs remoteState) {
+	// 身份（roam.* worktree config；读不到 = 外部创建 base unknown）。一条 --get-regexp 读全部：
+	// 原来 5 条 --get，25 个 worktree 的仓库光这一项就是 125 次 git 起进程
+	if out, e := git(ctx, w.Path, "config", "--worktree", "--get-regexp", `^roam\.`); e == nil {
+		for _, l := range strings.Split(out, "\n") {
+			k, v, _ := strings.Cut(strings.TrimSpace(l), " ")
+			switch k {
+			case "roam.baseref":
+				w.Base = v
+			case "roam.startoid":
+				w.StartOid = v
+			case "roam.createdby":
+				w.CreatedBy = v
+			case "roam.createdat":
+				w.CreatedAt = v
+			case "roam.adopted":
+				w.Adopted = v == "1"
+			}
+		}
+	}
+	w.External = w.CreatedBy != "roam"
+	// 状态
+	if st, e := git(ctx, w.Path, "status", "--porcelain=v1"); e == nil && st != "" {
+		for _, l := range strings.Split(st, "\n") {
+			if strings.HasPrefix(l, "??") {
+				w.Untracked++
+			} else if strings.TrimSpace(l) != "" {
+				w.Dirty++
+			}
+		}
+	}
+	if w.Base != "" && !w.IsMain {
+		// 对比目标优先远端主干（Sync fetch 更新的 origin/<base>）：远端 PR 合并后
+		// 本地 base 没 pull 也能翻绿；无远端跟踪 ref 时退回本地 base（旧行为）。
+		target := w.Base
+		if _, e := git(ctx, w.Path, "rev-parse", "--verify", "-q", "refs/remotes/origin/"+w.Base); e == nil {
+			target = "origin/" + w.Base
+		}
+		if cnt, e := git(ctx, w.Path, "rev-list", "--left-right", "--count", target+"...HEAD"); e == nil {
+			parts := strings.Fields(cnt)
+			if len(parts) == 2 {
+				w.Behind, _ = strconv.Atoi(parts[0])
+				w.CommittedAhead, _ = strconv.Atoi(parts[1])
+			}
+		}
+		// 合入判定：横向可扩展的信号链（mergeSignals），命中即定 kind、靠前优先。
+		// 统一前置 ownWork——worktree 必须真离开建时分叉点(StartOid)才算干过活；否则
+		// 新开的空 worktree HEAD==分叉点，天然是 target 的祖先，S1 会把它秒判「已合入」。
+		// StartOid 建时锁定、不随本地 base 分支移动/删除而失真，比对本地 base ref 更稳；
+		// 老 worktree 无 StartOid 时退回「相对 target 有领先提交」兜底（空 worktree=0 不判）。
+		ownWork := w.Head != w.StartOid
+		if w.StartOid == "" {
+			ownWork = w.CommittedAhead > 0
+		}
+		if ownWork {
+			for _, sig := range mergeSignals {
+				if kind, ok := sig(ctx, w, target); ok {
+					w.MergedInto, w.MergedKind = target, kind
+					break
+				}
+			}
+		}
+		// S3 branch-gone（仅佐证）：曾有远端跟踪 ref，而最近一次 ls-remote 观测里
+		// 远端分支已不在。观测缺失（nil）时静默退化，不报 gone。
+		if w.Branch != "" && rs.heads != nil && !rs.heads[w.Branch] {
+			if _, e := git(ctx, w.Path, "rev-parse", "--verify", "-q", "refs/remotes/origin/"+w.Branch); e == nil {
+				w.RemoteGone = true
+			}
+		}
+		// 已推送：当前 HEAD 已是 origin/<branch> 的祖先（含相等）=提交都已在远端。
+		// 纯本地跟踪 ref 判定（Sync fetch 会刷新它），ref 不存在时 merge-base 报错→false。
+		if w.Branch != "" {
+			if _, e := git(ctx, w.Path, "merge-base", "--is-ancestor", "HEAD", "refs/remotes/origin/"+w.Branch); e == nil {
+				w.Pushed = true
+			}
+		}
+	}
+	if ts, e := git(ctx, w.Path, "log", "-1", "--format=%ct"); e == nil {
+		w.LastCommitAt, _ = strconv.ParseInt(strings.TrimSpace(ts), 10, 64)
+	}
 }

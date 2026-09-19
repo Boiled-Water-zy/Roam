@@ -9,9 +9,15 @@
 // Late」那条同一个道理：看得见的东西，第一帧就得是对的）。服务端仍是唯一真相源，快照只
 // 负责这 1~2 秒的空窗；扫完照旧整份替换，所以项目没了、worktree 没了都会自己收敛。
 import { currentNodeId } from '../cluster/node-url'
+import type { SessionProject } from '../sessions/session-project'
 
 /** 树的两份服务端原料（第三份 /sessions 5s 一轮、自己就很快，不进快照） */
-export type TreeSrc = { projects: any[]; worktrees: Record<string, any[]> }
+export type TreeSrc = {
+  projects: any[]
+  worktrees: Record<string, any[]>
+  /** 会话 → 项目/worktree 的归属表（/sessions/annotations 算出来的）。有它，刷新第一帧会话就在项目下，不用等接口 */
+  placement?: Record<string, SessionProject>
+}
 
 const KEY = 'roam.tree'
 /** 最多记几台机器——和终端标签一样按最后使用时间淘汰 */
@@ -38,14 +44,18 @@ function readAll(): Record<string, Entry> {
 export function loadTreeSrc(nodeId: string | null = currentNodeId()): TreeSrc {
   const e = readAll()[slot(nodeId)]
   if (!e || !Array.isArray(e.projects) || Date.now() - (e.at || 0) > MAX_AGE_MS) return { projects: [], worktrees: {} }
-  return { projects: e.projects, worktrees: e.worktrees && typeof e.worktrees === 'object' ? e.worktrees : {} }
+  return {
+    projects: e.projects,
+    worktrees: e.worktrees && typeof e.worktrees === 'object' ? e.worktrees : {},
+    placement: e.placement && typeof e.placement === 'object' ? e.placement : undefined,
+  }
 }
 
 /** 一轮 worktree 扫完后存一份。只在扫完整存：半份快照会让下次刷新画出缺几个项目的树 */
 export function saveTreeSrc(src: TreeSrc, nodeId: string | null = currentNodeId()) {
   const all = readAll()
   const cur = slot(nodeId)
-  all[cur] = { projects: src.projects, worktrees: src.worktrees, at: Date.now() }
+  all[cur] = { projects: src.projects, worktrees: src.worktrees, placement: src.placement, at: Date.now() }
   // 刚写的这台永远留着，只在**其余**里淘汰
   const others = Object.keys(all).filter((k) => k !== cur)
   if (others.length > MAX_NODES - 1) {

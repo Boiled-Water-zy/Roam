@@ -235,7 +235,15 @@ export default function App() {
   const activateSession = (n: string) => { setActive(n); setActiveFile('') }
   // 左栏树的三份原料（22 设计 §3.2）：/projects 与每项目的 worktree 挂在下面那条 15s 轮询上，/sessions 挂 5s 那条。
   // 初值取上一轮的本地快照：worktree 那一趟要 1~2s，等它就等于每次刷新都从空树长一遍（见 task-tree-snapshot）
-  const [treeSrc, setTreeSrc] = useState<TreeSrc>(() => loadTreeSrc())
+  const [treeSrc, setTreeSrc] = useState<TreeSrc>(() => {
+    const s = loadTreeSrc()
+    // 归属表也从快照来：不然快照里的 worktree 没记到的会话（比如上次扫描后开的）要在「散会话」里
+    // 挂到 /projects 回来——那一趟 1.6s，树先画一版再整棵跳一次
+    if (s.placement && Object.keys(s.placement).length) setSessionProjects(s.placement)
+    return s
+  })
+  const treeSrcRef = useRef(treeSrc)
+  treeSrcRef.current = treeSrc
   // 建了新会话就立刻把会话表 / 归属表 / worktree 都刷一遍，不等下一轮（分别 5s / 15s / 60s）
   const sessReload = useRef<(() => void) | null>(null)
   const treeReload = useRef<(() => void) | null>(null)
@@ -384,15 +392,22 @@ export default function App() {
     let stop = false
     const load = async () => {
       try {
-        const [pr, an, sw] = await Promise.all([
-          api('GET', '/projects'),
-          api('GET', '/sessions/annotations').catch(() => null),
-          api('GET', '/swarms').catch(() => null),
-        ])
+        const prP = api('GET', '/projects')
+        const anP = api('GET', '/sessions/annotations').catch(() => null)
+        const swP = api('GET', '/swarms').catch(() => null)
+        // 归属表先到先用：/sessions/annotations 几十毫秒，/projects 冷的时候 1~2s（每个 worktree 跑一圈 git）。
+        // 拿手里的项目列表（快照或上一轮）先把会话归位，别让它在「散会话」里等 /projects
+        void anP.then((an) => {
+          if (stop || !an?.data) return
+          const known = treeSrcRef.current.projects
+          if (known.length) setSessionProjects(buildSessionProjects(known, an.data))
+        })
+        const [pr, an, sw] = await Promise.all([prP, anP, swP])
         if (stop) return
         const projects = pr?.data?.projects || []
         setUnfinished(projects.reduce((n: number, p: any) => n + (p.unfinished || 0), 0))
-        setSessionProjects(buildSessionProjects(projects, an?.data || {}))
+        const placement = buildSessionProjects(projects, an?.data || {})
+        setSessionProjects(placement)
         const swarms = Array.isArray(sw) ? sw : sw?.data || []
         setSwarmCount(swarms.filter((x: any) => x?.status && x.status !== 'archived').length)
         void loadGit()
@@ -415,7 +430,7 @@ export default function App() {
           if (stop) return
           // 扫完整份替换：这一轮没见到的项目（删了/不再是 git）连同快照里的残留一起清掉
           setTreeSrc({ projects, worktrees })
-          saveTreeSrc({ projects, worktrees })
+          saveTreeSrc({ projects, worktrees, placement })
         }
       } catch { /* 轮询失败就保持上一轮的值，不清空 */ }
     }
