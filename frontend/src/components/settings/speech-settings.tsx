@@ -72,6 +72,7 @@ export function SpeechSettings() {
             <Input addonBefore={t('settings.volcanoAppId')} value={cfg.volcano.appId} onChange={(e) => setVolc('appId', e.target.value)} />
             <Input.Password addonBefore={t('settings.volcanoAccessToken')} value={cfg.volcano.accessToken} onChange={(e) => setVolc('accessToken', e.target.value)} />
             <Input addonBefore={t('settings.volcanoResourceId')} value={cfg.volcano.resourceId} onChange={(e) => setVolc('resourceId', e.target.value)} />
+            <span className="tt-hint">{t('settings.volcanoResourceHint')}</span>
             <Input addonBefore={t('settings.volcanoEndpoint')} value={cfg.volcano.endpoint} onChange={(e) => setVolc('endpoint', e.target.value)} />
           </Space>
         )}

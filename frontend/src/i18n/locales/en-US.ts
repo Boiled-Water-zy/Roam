@@ -1386,6 +1386,7 @@ const enUS = {
   'settings.speechLanguage': 'Language',
   'settings.volcanoApiKey': 'API Key',
   'settings.volcanoApiKeyHint': 'New console: Doubao Speech › API Service Center › API Key',
+  'settings.volcanoResourceHint': 'Match what you enabled: Streaming ASR 2.0 = volc.bigasr.sauc.duration; File ASR 2.0 = volc.seedasr.auc; File ASR 1.0 flash = volc.bigasr.auc_turbo. Leave the endpoint empty to route by it',
   'settings.volcanoLegacyHint': 'Old console without an API Key: fill App ID + Access Token below. Either works; the API Key wins',
   'settings.volcanoAppId': 'App ID',
   'settings.volcanoAccessToken': 'Access Token',

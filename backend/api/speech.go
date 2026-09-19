@@ -292,6 +292,10 @@ func transcribeVolcano(cfg VolcanoSpeech, audio []byte) (string, error) {
 	if resourceID == "" {
 		resourceID = "volc.bigasr.auc"
 	}
+	if strings.Contains(resourceID, "sauc") {
+		// 流式语音识别（2.0 新版控制台默认开的就是它）：WebSocket，见 speech_volcano_stream.go
+		return transcribeVolcanoStream(cfg, resourceID, audio)
+	}
 	if strings.Contains(resourceID, "turbo") {
 		return transcribeVolcanoFlash(cfg, resourceID, audio)
 	}

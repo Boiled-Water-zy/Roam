@@ -1388,6 +1388,7 @@ const zhCN = {
   'settings.speechLanguage': '识别语言',
   'settings.volcanoApiKey': 'API Key',
   'settings.volcanoApiKeyHint': '新版控制台：豆包语音 › API 服务中心 › API Key',
+  'settings.volcanoResourceHint': '开通哪个填哪个：流式语音识别 2.0 = volc.bigasr.sauc.duration；录音文件识别 2.0 = volc.seedasr.auc；录音文件识别 1.0 极速版 = volc.bigasr.auc_turbo。接口地址留空按它自动选',
   'settings.volcanoLegacyHint': '旧版控制台没有 API Key 的，填下面的 App ID + Access Token；两种填一种即可，API Key 优先',
   'settings.volcanoAppId': 'App ID',
   'settings.volcanoAccessToken': 'Access Token',
