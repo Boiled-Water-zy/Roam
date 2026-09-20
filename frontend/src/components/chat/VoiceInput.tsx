@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react'
 import { App as AntApp } from 'antd'
 import { api, transcribe } from '../../api'
 import { useI18n } from '../../i18n'
+import { usePreferences } from '../../preferences'
+import { DEFAULT_VOICE_HOTKEY, formatHotkey, isHotkeyKeyUp, matchHotkey, parseHotkey } from './voice-hotkey'
 
 type Phase = 'idle' | 'requesting' | 'recording' | 'transcribing'
 
@@ -17,11 +19,9 @@ const MIN_MS = 500
  * 三种形态：悬浮（默认，右下角圆钮，手机用）/ inline（composer 控制条上的 pill）/
  * toolbar（会话工具条上的一枚扁平按钮，带「语音输入」字样——终端视图也能按住说话）。
  */
-/** 快捷键：Mac ⌘⇧S，其它 Ctrl+Shift+S。S 取 speak；Ctrl+Shift+V 是终端粘贴，不能占 */
-const HOTKEY_LABEL = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘⇧S' : 'Ctrl+Shift+S'
+/** 快捷键在设置里改（偏好 voiceHotkey），默认 Mod+Shift+S。S 取 speak；Ctrl+Shift+V 是终端粘贴，不能占 */
 /** 按住超过这么久再松开 = 对讲机式，松开即识别；更短 = 点一下，切换式 */
 const HOLD_MS = 350
-const isHotkey = (e: KeyboardEvent) => (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyS'
 
 /**
  * hotkey：这一枚响应全局快捷键。同一时刻页面上可能挂着好几枚话筒（每份对话的 composer 都有一枚），
@@ -31,6 +31,10 @@ const isHotkey = (e: KeyboardEvent) => (e.metaKey || e.ctrlKey) && e.shiftKey &&
 export function VoiceInput({ accent, onResult, inline = false, toolbar = false, hotkey = false }: { accent: string; onResult: (text: string) => void; inline?: boolean; toolbar?: boolean; hotkey?: boolean }) {
   const { t } = useI18n()
   const { message } = AntApp.useApp()
+  const [prefs] = usePreferences()
+  const hotkeySpec = prefs.voiceHotkey || DEFAULT_VOICE_HOTKEY
+  const HOTKEY_LABEL = formatHotkey(hotkeySpec)
+  const hkRef = useRef(parseHotkey(hotkeySpec)); hkRef.current = parseHotkey(hotkeySpec)
   // 录音能力探测：getUserMedia/MediaRecorder 仅在安全上下文(HTTPS / localhost)可用。
   // 手机走 LAN 的 http:// 访问时 navigator.mediaDevices 为 undefined，按了也录不了，
   // 故按钮置灰并给出「需 HTTPS」的明确提示，而不是含糊的「麦克风被拒」。
@@ -139,7 +143,7 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
     if (!hotkey) return
     const onDown = (e: KeyboardEvent) => {
       if (e.repeat) return
-      if (isHotkey(e)) {
+      if (matchHotkey(e, hkRef.current)) {
         e.preventDefault(); e.stopPropagation()
         if (phaseRef.current === 'idle') { downAt.current = Date.now(); holding.current = true; void beginRef.current(0, true) }
         else if (phaseRef.current === 'recording' || phaseRef.current === 'requesting') { holding.current = false; endRef.current() }
@@ -154,8 +158,7 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
     }
     const onUp = (e: KeyboardEvent) => {
       if (!holding.current) return
-      const isKey = e.code === 'KeyS' || e.key === 'Shift' || e.key === 'Control' || e.key === 'Meta'
-      if (!isKey) return
+      if (!isHotkeyKeyUp(e, hkRef.current)) return
       if (Date.now() - downAt.current < HOLD_MS) { holding.current = false; return } // 点一下：留给切换式
       holding.current = false
       if (phaseRef.current === 'recording' || phaseRef.current === 'requesting') endRef.current()

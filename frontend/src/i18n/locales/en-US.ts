@@ -1362,6 +1362,11 @@ const enUS = {
 
   'voice.input': 'Voice input',
   'voice.holdToTalk': 'Hold to talk',
+  'set.voiceHotkey': 'Voice input hotkey',
+  'set.voiceHotkeyHelp': 'Tap to start, tap again to recognize; hold and release to recognize. Click the button, then press the combo you want',
+  'set.hotkeyPress': 'Press a combo…',
+  'set.hotkeyNeedMod': 'Needs Ctrl / Alt / ⌘ (F-keys excepted)',
+  'set.hotkeyReset': 'Reset',
   'voice.hotkeyHint': 'Hold {key} to talk, release to recognize; or tap to start and tap again to recognize',
   'voice.hotkeyStop': 'Release or press {key} again to recognize · Esc to cancel',
   'voice.notConfigured': 'Configure speech recognition in Settings first',

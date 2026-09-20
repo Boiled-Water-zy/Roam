@@ -1364,6 +1364,11 @@ const zhCN = {
 
   'voice.input': '语音输入',
   'voice.holdToTalk': '长按说话',
+  'set.voiceHotkey': '语音输入快捷键',
+  'set.voiceHotkeyHelp': '点一下开始录音、再点一下识别；按住不放则松开即识别。点按钮后按下想用的组合键',
+  'set.hotkeyPress': '按下组合键…',
+  'set.hotkeyNeedMod': '要带 Ctrl / Alt / ⌘（F 键除外）',
+  'set.hotkeyReset': '重置',
   'voice.hotkeyHint': '按住 {key} 说话，松开识别；点一下则开始、再点一下识别',
   'voice.hotkeyStop': '松开或再按 {key} 识别 · Esc 取消',
   'voice.notConfigured': '请先在设置中配置语音识别',
