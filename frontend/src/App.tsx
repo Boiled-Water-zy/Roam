@@ -77,6 +77,7 @@ import { ICONS } from './components/nav-icons'
 import { normalizeRoute, setHashParams, readTermTokens, NO_TERMS, TASK_ROUTE } from './route-hash'
 import type { ClaudeInfo } from './components/terminal/claude-info'
 import { dropDeadTokens, loadTabs, saveTabs, type FileTab } from './components/terminal/term-tabs-store'
+import { lastTabOf, rememberLastTab } from './components/shell/task-last-tab'
 import type { FileTabMode } from './components/files/FilePathBar'
 import { CloudIcon, ExitFullscreenIcon, FullscreenIcon, LogoutIcon, MoonIcon, MoreIcon, SearchIcon, SunIcon } from './icons'
 import { lazyRetry } from './components/lazy-retry'
@@ -198,6 +199,8 @@ export default function App() {
   const setPanel = (p: InspectorPanelKind) => { setPanelLocal(p); try { localStorage.setItem('roam.inspectorPanel', p) } catch { /* 记不住而已 */ } }
   // 文件标签：一条平铺列表，每条记着从哪个任务开的；activeFile 非空 = 当前标签是文件，空 = 当前标签是会话
   const [fileTabs, setFileTabs] = useState<FileTab[]>([])
+  const fileTabsRef = useRef<FileTab[]>([])
+  fileTabsRef.current = fileTabs
   const [activeFile, setActiveFile] = useState('')
   const [reveal, setReveal] = useState<{ path: string; line: number; nonce: number } | undefined>()
   const [searchNonce, setSearchNonce] = useState(0)
@@ -207,16 +210,23 @@ export default function App() {
   const activeTask: TaskKey | null = curFileTab ? (curFileTab.task || null) : active ? keyOf(active) : null
   const activeTaskRef = useRef<TaskKey | null>(null)
   activeTaskRef.current = activeTask
+  // 记住这个任务上次看到哪个标签（会话 + 当时开着的文件），从树里点回来时先回到它
+  useEffect(() => { if (activeTask) rememberLastTab(activeTask, { session: active || undefined, file: curFile || undefined }) }, [activeTask, active, curFile])
+  /** 回到任务上次看的那个标签；文件标签还开着才回文件，否则退回会话 */
+  const returnToTask = (key: TaskKey, session: string) => {
+    const last = lastTabOf(key)
+    const file = last?.session === session && last.file && fileTabsRef.current.some((f) => f.path === last.file) ? last.file : ''
+    setActive(session); setActiveFile(file)
+    go(TASK_ROUTE)
+    space.setDockOpen(true); space.setFocus('none')
+  }
   const isMd = (p: string) => /\.(md|markdown|mdx|html?)$/i.test(p)
-  // 单击开预览标签（斜体）；再单击别的文件替换它；已开着的直接激活
+  // 每个文件各开一个标签（像 VSCode 关掉预览模式那样）；已开着的直接激活。
+  // 原来是「预览标签」：单击开一个斜体标签、再点别的文件就把它换掉——看着看着文档就没了，
+  // 回来还得从树里重新点，用户把它当 bug 报了
   const openFileTab = (path: string, line?: number) => {
     const key = activeTaskRef.current || ''
-    setFileTabs((list) => {
-      if (list.some((f) => f.path === path)) return list
-      const tab: FileTab = { path, preview: true, mode: isMd(path) ? 'preview' : 'source', task: key }
-      const i = list.findIndex((f) => f.preview)
-      return i < 0 ? [...list, tab] : list.map((f, k) => (k === i ? tab : f))
-    })
+    setFileTabs((list) => (list.some((f) => f.path === path) ? list : [...list, { path, preview: false, mode: isMd(path) ? 'preview' : 'source', task: key }]))
     setActiveFile(path)
     if (line && line > 0) setReveal((prev) => ({ path, line, nonce: (prev?.nonce || 0) + 1 }))
   }
@@ -711,7 +721,11 @@ export default function App() {
   // 树：点任务 → 回到它已开着的会话标签；一个都没开就打开它的第一个会话
   const onTreeTask = (key: TaskKey) => {
     const open = terms.filter((n) => keyOf(n) === key)
-    if (open.length) { setActive(active && open.includes(active) ? active : open[open.length - 1]); setActiveFile('') }
+    if (open.length) {
+      const last = lastTabOf(key)
+      returnToTask(key, active && open.includes(active) ? active : last?.session && open.includes(last.session) ? last.session : open[open.length - 1])
+      return
+    }
     else {
       const first = firstSessionOf(tree, key)
       if (first) { openTerm(first, key); return }
@@ -1057,7 +1071,7 @@ export default function App() {
             onSearch={openPalette}
             searchHint={`${modKeyLabel}K`}
             tree={<ProjectTree tree={tree} activeTask={activeTask} activeSession={active}
-              onProject={onTreeProject} onTask={onTreeTask} onSession={(key, name) => openTerm(name, key)}
+              onProject={onTreeProject} onTask={onTreeTask} onSession={(key, name) => (terms.includes(name) ? returnToTask(key, name) : openTerm(name, key))}
               onAddProject={() => setNewProjectOpen(true)}
               onRename={setRenameInTree}
               onRenameTask={(key, name) => { setRenameTask({ key, name }); setRenameTaskVal(prefs.taskNames?.[key] || name) }}
