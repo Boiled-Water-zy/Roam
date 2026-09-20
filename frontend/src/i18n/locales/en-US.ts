@@ -1362,6 +1362,10 @@ const enUS = {
 
   'voice.input': 'Voice input',
   'voice.holdToTalk': 'Hold to talk',
+  'voice.clickToTalk': 'Click to start talking, click again to recognize',
+  'voice.dictation': 'Dictate',
+  'voice.stopDictation': 'Stop and recognize',
+  'voice.clickStop': 'Click again or press {key} to recognize · Esc to cancel · 5 min max',
   'set.voiceHotkey': 'Voice input hotkey',
   'set.voiceHotkeyHelp': 'Tap to start, tap again to recognize; hold and release to recognize. Click the button, then press the combo you want',
   'set.hotkeyPress': 'Press a combo…',

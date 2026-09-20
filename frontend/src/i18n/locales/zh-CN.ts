@@ -1364,6 +1364,10 @@ const zhCN = {
 
   'voice.input': '语音输入',
   'voice.holdToTalk': '长按说话',
+  'voice.clickToTalk': '点一下开始说话，再点一下识别',
+  'voice.dictation': '听写',
+  'voice.stopDictation': '停止并识别',
+  'voice.clickStop': '再点一下或按 {key} 识别 · Esc 取消 · 最长 5 分钟',
   'set.voiceHotkey': '语音输入快捷键',
   'set.voiceHotkeyHelp': '点一下开始录音、再点一下识别；按住不放则松开即识别。点按钮后按下想用的组合键',
   'set.hotkeyPress': '按下组合键…',

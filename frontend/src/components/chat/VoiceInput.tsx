@@ -2,7 +2,8 @@
 // 长按开始录音 → 松开识别 → 文本回填到输入框；录音中上滑可取消。
 // 录音在浏览器内重采样成 16kHz 单声道 WAV(两家服务商都稳收)，再交后端识别。
 import { useEffect, useRef, useState } from 'react'
-import { App as AntApp } from 'antd'
+import { App as AntApp, Tooltip } from 'antd'
+import { useLayout } from '../../layout'
 import { api, transcribe } from '../../api'
 import { useI18n } from '../../i18n'
 import { usePreferences } from '../../preferences'
@@ -14,6 +15,8 @@ type Phase = 'idle' | 'requesting' | 'recording' | 'transcribing'
 const CANCEL_DY = 90
 // 录音时长下限：太短的误触不送去识别。
 const MIN_MS = 500
+// 一段录音最长这么久，到点自动收尾识别：忘了关也不会一直录下去
+const MAX_MS = 5 * 60 * 1000
 
 /**
  * 三种形态：悬浮（默认，右下角圆钮，手机用）/ inline（composer 控制条上的 pill）/
@@ -32,6 +35,10 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
   const { t } = useI18n()
   const { message } = AntApp.useApp()
   const [prefs] = usePreferences()
+  // 鼠标：点一下开录、再点一下识别（GPT 那种）；触屏：按住说话、上滑取消（微信那种）
+  const { coarse } = useLayout()
+  const clickMode = !coarse
+  const maxTimer = useRef<number | undefined>(undefined)
   const hotkeySpec = prefs.voiceHotkey || DEFAULT_VOICE_HOTKEY
   const HOTKEY_LABEL = formatHotkey(hotkeySpec)
   const hkRef = useRef(parseHotkey(hotkeySpec)); hkRef.current = parseHotkey(hotkeySpec)
@@ -113,6 +120,7 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
     setSecs(0)
     setPhase('recording')
     timerRef.current = window.setInterval(() => setSecs(Math.floor((Date.now() - startTsRef.current) / 1000)), 250)
+    maxTimer.current = window.setTimeout(() => endRef.current(), MAX_MS)
   }
 
   const move = (clientY: number) => {
@@ -125,6 +133,7 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
   const end = () => {
     pressedRef.current = false
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = undefined }
+    if (maxTimer.current) { clearTimeout(maxTimer.current); maxTimer.current = undefined }
     if (phase === 'requesting') { setPhase('idle'); return } // 还没真正开录
     if (phase !== 'recording') return
     try { recRef.current?.stop() } catch { stopTracks(); setPhase('idle') } // onstop 里走 finish()
@@ -149,7 +158,7 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
         else if (phaseRef.current === 'recording' || phaseRef.current === 'requesting') { holding.current = false; endRef.current() }
         return
       }
-      if (e.key === 'Escape' && byKeyRef.current && (phaseRef.current === 'recording' || phaseRef.current === 'requesting')) {
+      if (e.key === 'Escape' && (phaseRef.current === 'recording' || phaseRef.current === 'requesting')) {
         e.preventDefault(); e.stopPropagation()
         cancelRef.current = true
         holding.current = false
@@ -191,6 +200,11 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
   }
 
   const active = phase === 'recording' || phase === 'requesting'
+  // GPT 式提示：名字 + 键帽。只给鼠标（粗指针下 .ant-tooltip 全站隐藏，长按弹出来收不掉）
+  const tipped = clickMode && (toolbar || inline) && micUsable && configured
+  const wrapTip = (btn: React.ReactElement) => (tipped
+    ? <Tooltip mouseEnterDelay={0.35} title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{t(active ? 'voice.stopDictation' : 'voice.dictation')}{hotkey && <kbd style={{ padding: '1px 6px', borderRadius: 'var(--r-xs)', background: 'rgba(255,255,255,.16)', font: '500 var(--fs-micro)/1.4 var(--mono)' }}>{HOTKEY_LABEL}</kbd>}</span>}>{btn}</Tooltip>
+    : btn)
   const mm = String(Math.floor(secs / 60)).padStart(2, '0')
   const ss = String(secs % 60).padStart(2, '0')
 
@@ -211,21 +225,25 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
           </div>
           <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 18, marginBottom: 6 }}>{mm}:{ss}</div>
           <div style={{ fontSize: 12, opacity: 0.85 }}>
-            {phase === 'requesting' ? t('voice.starting') : byKey ? t('voice.hotkeyStop', { key: HOTKEY_LABEL }) : cancelArmed ? t('voice.releaseCancel') : t('voice.releaseSend')}
+            {phase === 'requesting' ? t('voice.starting') : byKey || clickMode ? t('voice.clickStop', { key: HOTKEY_LABEL }) : cancelArmed ? t('voice.releaseCancel') : t('voice.releaseSend')}
           </div>
         </div>
       )}
-      <button
+      {wrapTip(<button
         type="button"
         className={toolbar ? `tt-tbtn tt-mic${active ? ' rec' : ''}` : inline ? `tt-pill ico tt-mic${active ? ' rec' : ''}` : undefined}
-        title={!micUsable ? micHint : configured ? (hotkey ? `${t('voice.holdToTalk')} · ${t('voice.hotkeyHint', { key: HOTKEY_LABEL })}` : t('voice.holdToTalk')) : t('voice.notConfigured')}
-        aria-label={t('voice.holdToTalk')}
+        title={tipped ? undefined : !micUsable ? micHint : configured ? t(clickMode ? 'voice.clickToTalk' : 'voice.holdToTalk') : t('voice.notConfigured')}
+        aria-label={t(clickMode ? 'voice.clickToTalk' : 'voice.holdToTalk')}
         disabled={phase === 'transcribing'}
         onContextMenu={(e) => e.preventDefault()}
-        onPointerDown={(e) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); begin(e.clientY) }}
-        onPointerMove={(e) => move(e.clientY)}
-        onPointerUp={(e) => { e.preventDefault(); end() }}
-        onPointerCancel={() => { cancelRef.current = true; end() }}
+        {...(clickMode
+          ? { onClick: () => { if (phase === 'idle') void begin(0); else if (active) end() } }
+          : {
+            onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); void begin(e.clientY) },
+            onPointerMove: (e: React.PointerEvent) => move(e.clientY),
+            onPointerUp: (e: React.PointerEvent) => { e.preventDefault(); end() },
+            onPointerCancel: () => { cancelRef.current = true; end() },
+          })}
         style={toolbar ? { touchAction: 'none' } : inline
           // 内联：控制条上的一枚 pill——静息时安静，按住说话才亮成强调色（.tt-mic.rec）。
           // 从前它静息就是一整块实心强调色，跟旁边那颗实心发送键抢，一条控制条两个"主动作"。
@@ -246,7 +264,7 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
           <MicIcon size={toolbar ? 14 : inline ? 15 : 26} silver={!(inline || toolbar) || active} />
         </span>
         {toolbar && <span>{t('voice.input')}</span>}
-      </button>
+      </button>)}
     </>
   )
 }
