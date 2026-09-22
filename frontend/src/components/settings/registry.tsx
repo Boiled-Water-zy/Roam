@@ -8,6 +8,7 @@
 //
 // 标签走 labelKey/descKey 而不是中文串：搜索索引必须在 t() 之后建，否则英文界面搜不到任何东西。
 import type { ReactNode } from 'react'
+import { HotkeyRecorder } from './hotkey-recorder'
 import { BrowserSettings } from './browser-settings'
 import { PhoneSettings } from './phone-settings'
 import { SpeechSettings } from './speech-settings'
@@ -154,6 +155,11 @@ export function buildSettings(deps: {
     id: 'promptPopupOff', label: t('settings.promptPopupDefault'), desc: t('settings.promptPopupDefaultHelp'), key: 'promptPopupOff',
     control: { kind: 'switch', get: () => !prefs.promptPopupOff, set: (on) => deps.setPrefs({ promptPopupOff: !on }) },
   }
+  const voiceHotkeyItem: SettingItem = {
+    id: 'voiceHotkey', label: t('set.voiceHotkey'), desc: t('set.voiceHotkeyHelp'), key: 'voiceHotkey',
+    keywords: '语音 快捷键 hotkey shortcut 按住',
+    control: { kind: 'custom', node: <HotkeyRecorder value={prefs.voiceHotkey || 'Mod+Shift+KeyS'} fallback="Mod+Shift+KeyS" onChange={(v) => deps.setPrefs({ voiceHotkey: v })} /> },
+  }
   const voiceItem: SettingItem = {
     id: 'showVoiceButton', label: t('set.voiceButton'), desc: t('set.voiceButtonHelp'), key: 'showVoiceButton',
     control: { kind: 'switch', get: () => prefs.showVoiceButton !== false, set: (on) => deps.setPrefs({ showVoiceButton: on }) },
@@ -168,6 +174,7 @@ export function buildSettings(deps: {
         { ...claudeItem, from: `${t('set.groupAgent')} · ${t('set.pageBin')}` },
         { ...promptPopupItem, from: `${t('set.groupAgent')} · ${t('set.pageNewSession')}` },
         { ...voiceItem, from: `${t('set.groupAgent')} · ${t('set.pageNewSession')}` },
+        { ...voiceHotkeyItem, from: `${t('set.groupAgent')} · ${t('set.pageNewSession')}` },
       ],
     },
     {
@@ -232,6 +239,7 @@ export function buildSettings(deps: {
         },
         promptPopupItem,
         voiceItem,
+        voiceHotkeyItem,
       ],
     },
     {

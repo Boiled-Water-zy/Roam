@@ -2,9 +2,12 @@
 // 长按开始录音 → 松开识别 → 文本回填到输入框；录音中上滑可取消。
 // 录音在浏览器内重采样成 16kHz 单声道 WAV(两家服务商都稳收)，再交后端识别。
 import { useEffect, useRef, useState } from 'react'
-import { App as AntApp } from 'antd'
+import { App as AntApp, Tooltip } from 'antd'
+import { useLayout } from '../../layout'
 import { api, transcribe } from '../../api'
 import { useI18n } from '../../i18n'
+import { usePreferences } from '../../preferences'
+import { DEFAULT_VOICE_HOTKEY, formatHotkey, isHotkeyKeyUp, matchHotkey, parseHotkey } from './voice-hotkey'
 
 type Phase = 'idle' | 'requesting' | 'recording' | 'transcribing'
 
@@ -12,14 +15,16 @@ type Phase = 'idle' | 'requesting' | 'recording' | 'transcribing'
 const CANCEL_DY = 90
 // 录音时长下限：太短的误触不送去识别。
 const MIN_MS = 500
+// 一段录音最长这么久，到点自动收尾识别：忘了关也不会一直录下去
+const MAX_MS = 5 * 60 * 1000
 
 /**
  * 三种形态：悬浮（默认，右下角圆钮，手机用）/ inline（composer 控制条上的 pill）/
  * toolbar（会话工具条上的一枚扁平按钮，带「语音输入」字样——终端视图也能按住说话）。
  */
-/** 快捷键：Mac ⌘⇧S，其它 Ctrl+Shift+S。S 取 speak；Ctrl+Shift+V 是终端粘贴，不能占 */
-const HOTKEY_LABEL = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘⇧S' : 'Ctrl+Shift+S'
-const isHotkey = (e: KeyboardEvent) => (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyS'
+/** 快捷键在设置里改（偏好 voiceHotkey），默认 Mod+Shift+S。S 取 speak；Ctrl+Shift+V 是终端粘贴，不能占 */
+/** 按住超过这么久再松开 = 对讲机式，松开即识别；更短 = 点一下，切换式 */
+const HOLD_MS = 350
 
 /**
  * hotkey：这一枚响应全局快捷键。同一时刻页面上可能挂着好几枚话筒（每份对话的 composer 都有一枚），
@@ -29,6 +34,14 @@ const isHotkey = (e: KeyboardEvent) => (e.metaKey || e.ctrlKey) && e.shiftKey &&
 export function VoiceInput({ accent, onResult, inline = false, toolbar = false, hotkey = false }: { accent: string; onResult: (text: string) => void; inline?: boolean; toolbar?: boolean; hotkey?: boolean }) {
   const { t } = useI18n()
   const { message } = AntApp.useApp()
+  const [prefs] = usePreferences()
+  // 鼠标：点一下开录、再点一下识别（GPT 那种）；触屏：按住说话、上滑取消（微信那种）
+  const { coarse } = useLayout()
+  const clickMode = !coarse
+  const maxTimer = useRef<number | undefined>(undefined)
+  const hotkeySpec = prefs.voiceHotkey || DEFAULT_VOICE_HOTKEY
+  const HOTKEY_LABEL = formatHotkey(hotkeySpec)
+  const hkRef = useRef(parseHotkey(hotkeySpec)); hkRef.current = parseHotkey(hotkeySpec)
   // 录音能力探测：getUserMedia/MediaRecorder 仅在安全上下文(HTTPS / localhost)可用。
   // 手机走 LAN 的 http:// 访问时 navigator.mediaDevices 为 undefined，按了也录不了，
   // 故按钮置灰并给出「需 HTTPS」的明确提示，而不是含糊的「麦克风被拒」。
@@ -107,6 +120,7 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
     setSecs(0)
     setPhase('recording')
     timerRef.current = window.setInterval(() => setSecs(Math.floor((Date.now() - startTsRef.current) / 1000)), 250)
+    maxTimer.current = window.setTimeout(() => endRef.current(), MAX_MS)
   }
 
   const move = (clientY: number) => {
@@ -119,6 +133,7 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
   const end = () => {
     pressedRef.current = false
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = undefined }
+    if (maxTimer.current) { clearTimeout(maxTimer.current); maxTimer.current = undefined }
     if (phase === 'requesting') { setPhase('idle'); return } // 还没真正开录
     if (phase !== 'recording') return
     try { recRef.current?.stop() } catch { stopTracks(); setPhase('idle') } // onstop 里走 finish()
@@ -129,24 +144,40 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
   phaseRef.current = phase
   const beginRef = useRef(begin); beginRef.current = begin
   const endRef = useRef(end); endRef.current = end
+  // 两用：按住不放 = 对讲机（keydown 开录、keyup 识别）；快速点一下 = 切换式（再按一次识别）。
+  // 判据是 keydown 到 keyup 的间隔：超过 HOLD_MS 才算「按住」。S 键先松、修饰键后松也算一次 keyup
+  const downAt = useRef(0)
+  const holding = useRef(false)
   useEffect(() => {
     if (!hotkey) return
-    const onKey = (e: KeyboardEvent) => {
+    const onDown = (e: KeyboardEvent) => {
       if (e.repeat) return
-      if (isHotkey(e)) {
+      if (matchHotkey(e, hkRef.current)) {
         e.preventDefault(); e.stopPropagation()
-        if (phaseRef.current === 'idle') void beginRef.current(0, true)
-        else if (phaseRef.current === 'recording' || phaseRef.current === 'requesting') endRef.current()
+        if (phaseRef.current === 'idle') { downAt.current = Date.now(); holding.current = true; void beginRef.current(0, true) }
+        else if (phaseRef.current === 'recording' || phaseRef.current === 'requesting') { holding.current = false; endRef.current() }
         return
       }
-      if (e.key === 'Escape' && byKeyRef.current && (phaseRef.current === 'recording' || phaseRef.current === 'requesting')) {
+      if (e.key === 'Escape' && (phaseRef.current === 'recording' || phaseRef.current === 'requesting')) {
         e.preventDefault(); e.stopPropagation()
         cancelRef.current = true
+        holding.current = false
         endRef.current()
       }
     }
-    window.addEventListener('keydown', onKey, { capture: true })
-    return () => window.removeEventListener('keydown', onKey, { capture: true } as any)
+    const onUp = (e: KeyboardEvent) => {
+      if (!holding.current) return
+      if (!isHotkeyKeyUp(e, hkRef.current)) return
+      if (Date.now() - downAt.current < HOLD_MS) { holding.current = false; return } // 点一下：留给切换式
+      holding.current = false
+      if (phaseRef.current === 'recording' || phaseRef.current === 'requesting') endRef.current()
+    }
+    window.addEventListener('keydown', onDown, { capture: true })
+    window.addEventListener('keyup', onUp, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', onDown, { capture: true } as any)
+      window.removeEventListener('keyup', onUp, { capture: true } as any)
+    }
   }, [hotkey])
 
   // 录音停止后：取消 / 太短 / 正常识别。
@@ -169,6 +200,11 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
   }
 
   const active = phase === 'recording' || phase === 'requesting'
+  // GPT 式提示：名字 + 键帽。只给鼠标（粗指针下 .ant-tooltip 全站隐藏，长按弹出来收不掉）
+  const tipped = clickMode && (toolbar || inline) && micUsable && configured
+  const wrapTip = (btn: React.ReactElement) => (tipped
+    ? <Tooltip mouseEnterDelay={0.35} title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{t(active ? 'voice.stopDictation' : 'voice.dictation')}{hotkey && <kbd style={{ padding: '1px 6px', borderRadius: 'var(--r-xs)', background: 'rgba(255,255,255,.16)', font: '500 var(--fs-micro)/1.4 var(--mono)' }}>{HOTKEY_LABEL}</kbd>}</span>}>{btn}</Tooltip>
+    : btn)
   const mm = String(Math.floor(secs / 60)).padStart(2, '0')
   const ss = String(secs % 60).padStart(2, '0')
 
@@ -189,21 +225,25 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
           </div>
           <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 18, marginBottom: 6 }}>{mm}:{ss}</div>
           <div style={{ fontSize: 12, opacity: 0.85 }}>
-            {phase === 'requesting' ? t('voice.starting') : byKey ? t('voice.hotkeyStop', { key: HOTKEY_LABEL }) : cancelArmed ? t('voice.releaseCancel') : t('voice.releaseSend')}
+            {phase === 'requesting' ? t('voice.starting') : byKey || clickMode ? t('voice.clickStop', { key: HOTKEY_LABEL }) : cancelArmed ? t('voice.releaseCancel') : t('voice.releaseSend')}
           </div>
         </div>
       )}
-      <button
+      {wrapTip(<button
         type="button"
         className={toolbar ? `tt-tbtn tt-mic${active ? ' rec' : ''}` : inline ? `tt-pill ico tt-mic${active ? ' rec' : ''}` : undefined}
-        title={!micUsable ? micHint : configured ? (hotkey ? `${t('voice.holdToTalk')} · ${t('voice.hotkeyHint', { key: HOTKEY_LABEL })}` : t('voice.holdToTalk')) : t('voice.notConfigured')}
-        aria-label={t('voice.holdToTalk')}
+        title={tipped ? undefined : !micUsable ? micHint : configured ? t(clickMode ? 'voice.clickToTalk' : 'voice.holdToTalk') : t('voice.notConfigured')}
+        aria-label={t(clickMode ? 'voice.clickToTalk' : 'voice.holdToTalk')}
         disabled={phase === 'transcribing'}
         onContextMenu={(e) => e.preventDefault()}
-        onPointerDown={(e) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); begin(e.clientY) }}
-        onPointerMove={(e) => move(e.clientY)}
-        onPointerUp={(e) => { e.preventDefault(); end() }}
-        onPointerCancel={() => { cancelRef.current = true; end() }}
+        {...(clickMode
+          ? { onClick: () => { if (phase === 'idle') void begin(0); else if (active) end() } }
+          : {
+            onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); void begin(e.clientY) },
+            onPointerMove: (e: React.PointerEvent) => move(e.clientY),
+            onPointerUp: (e: React.PointerEvent) => { e.preventDefault(); end() },
+            onPointerCancel: () => { cancelRef.current = true; end() },
+          })}
         style={toolbar ? { touchAction: 'none' } : inline
           // 内联：控制条上的一枚 pill——静息时安静，按住说话才亮成强调色（.tt-mic.rec）。
           // 从前它静息就是一整块实心强调色，跟旁边那颗实心发送键抢，一条控制条两个"主动作"。
@@ -224,7 +264,7 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
           <MicIcon size={toolbar ? 14 : inline ? 15 : 26} silver={!(inline || toolbar) || active} />
         </span>
         {toolbar && <span>{t('voice.input')}</span>}
-      </button>
+      </button>)}
     </>
   )
 }
