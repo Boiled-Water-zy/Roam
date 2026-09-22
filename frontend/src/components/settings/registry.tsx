@@ -336,7 +336,7 @@ export function buildSettings(deps: {
   const nodes: TreeNode[] = [
     { kind: 'section', title: t('set.secMine'), note: '' },
     { kind: 'leaf', page: 'common' },
-    { kind: 'parent', id: 'ui', title: t('set.groupUi'), kids: ['ui.look', 'ui.layout', 'ui.status'] },
+    { kind: 'parent', id: 'ui', title: t('set.groupUi'), kids: ['ui.look', 'ui.layout', 'ui.keys', 'ui.status'] },
     { kind: 'parent', id: 'agent', title: t('set.groupAgent'), kids: ['agent.bin', 'agent.new'] },
     // 这一段的页直接摊平：段标题已经写了「这台机器」，再套一层同名的父节点是把同一件事说两遍
     { kind: 'section', title: deps.nodeLabel ? t('set.secNode', { node: deps.nodeLabel }) : t('set.groupNode'), note: '' },
