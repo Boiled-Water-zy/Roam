@@ -2019,6 +2019,11 @@ const zhCN = {
 
   'nav.projects': '项目',
   'nav.inbox': '收件箱',
+  'about.certTitle': '证书与推送',
+  'about.certAndroid': 'Roami 默认用自签证书。桌面浏览器和 Android Chrome 点一次「继续访问」就行，推送照收。',
+  'about.certIphone': 'iPhone 不认自签证书：先在手机上装并信任 Roami 的根证书（设置 › 通用 › VPN 与设备管理 › 安装，再到 关于本机 › 证书信任设置 里打开），再加到主屏，推送才能收到。',
+  'about.certDownload': '下载根证书 cert.crt',
+  'about.certOwn': '也可以自己配一张正式证书，覆盖 ~/.roami/tls/ 下的 cert.pem 与 key.pem 后重启。',
   'inbox.kicker': '会话事件',
   'inbox.desc': '谁在等你、谁做完了、谁出错了。开了推送，这些会送到手机锁屏上。',
   'inbox.waiting': '需要你',

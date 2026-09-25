@@ -2013,6 +2013,11 @@ const enUS = {
 
   'nav.projects': 'Projects',
   'nav.inbox': 'Inbox',
+  'about.certTitle': 'Certificate & push',
+  'about.certAndroid': 'Roami uses a self-signed certificate by default. Desktop browsers and Android Chrome just need one "proceed" click; push works.',
+  'about.certIphone': 'iPhone does not accept self-signed certificates: install and trust the Roami root certificate first (Settings › General › VPN & Device Management › Install, then About › Certificate Trust Settings), then add to Home Screen to receive push.',
+  'about.certDownload': 'Download root certificate cert.crt',
+  'about.certOwn': 'Or bring your own certificate: replace cert.pem and key.pem under ~/.roami/tls/ and restart.',
   'inbox.kicker': 'Session events',
   'inbox.desc': 'Who needs you, who finished, who failed. With push on, these reach your phone lock screen.',
   'inbox.waiting': 'Needs you',
