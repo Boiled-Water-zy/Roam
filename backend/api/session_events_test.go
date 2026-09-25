@@ -6,6 +6,7 @@ const waitScreen = "Do you want to proceed?\n❯ 1. Yes\n  2. No\nEnter to selec
 
 func TestSessionEventsDebounceAndReset(t *testing.T) {
 	ev := newSessionEvents()
+	ev.observe(map[string]string{}, func(string) string { return "" }) // 启动那一轮：只登记
 	sess := map[string]string{"s1": "调研"}
 	cap := func(string) string { return waitScreen }
 	if got := ev.observe(sess, cap); len(got) != 0 {
@@ -37,8 +38,27 @@ func TestSessionEventsDebounceAndReset(t *testing.T) {
 	}
 }
 
+// 进程重启：启动时就在等的会话不再推一遍
+func TestSessionEventsSeedOnStart(t *testing.T) {
+	ev := newSessionEvents()
+	sess := map[string]string{"s1": "早就在等"}
+	cap := func(string) string { return waitScreen }
+	for i := 0; i < 3; i++ {
+		if got := ev.observe(sess, cap); len(got) != 0 {
+			t.Fatalf("启动前就在等的不该推: %+v", got)
+		}
+	}
+	// 它回到不等、再等：正常推
+	ev.observe(sess, func(string) string { return "$ " })
+	ev.observe(sess, cap)
+	if got := ev.observe(sess, cap); len(got) != 1 {
+		t.Fatalf("复位后再等该推: %+v", got)
+	}
+}
+
 func TestSessionEventsNoActionsForFreeChoice(t *testing.T) {
 	ev := newSessionEvents()
+	ev.observe(map[string]string{}, func(string) string { return "" })
 	sess := map[string]string{"s": "x"}
 	cap := func(string) string { return "选一个\n❯ 1. 按周\n  2. 按月\n  3. 自定义\nEnter to select" }
 	ev.observe(sess, cap)

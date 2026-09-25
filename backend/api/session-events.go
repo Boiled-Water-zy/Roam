@@ -17,7 +17,8 @@ type sessionEventState struct {
 }
 
 type sessionEvents struct {
-	state map[string]sessionEventState
+	state  map[string]sessionEventState
+	seeded bool // 第一轮只登记不发：进程一重启就把早已在等的会话再推一遍，那是噪音
 }
 
 func newSessionEvents() *sessionEvents { return &sessionEvents{state: map[string]sessionEventState{}} }
@@ -44,6 +45,9 @@ func (e *sessionEvents) observe(sessions map[string]string, capture func(name st
 			continue
 		}
 		st.streak++
+		if !e.seeded {
+			st.streak, st.notified = 2, true // 启动前就在等的：当作已通知过
+		}
 		if st.streak >= 2 && !st.notified {
 			st.notified = true
 			p := PushPayload{Type: "session.waiting", Session: name, Label: label, Title: label, Body: waitingSummary(cap, 140)}
@@ -55,6 +59,7 @@ func (e *sessionEvents) observe(sessions map[string]string, capture func(name st
 		}
 		e.state[name] = st
 	}
+	e.seeded = true
 	return out
 }
 
