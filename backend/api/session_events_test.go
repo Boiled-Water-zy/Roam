@@ -18,6 +18,9 @@ func TestSessionEventsDebounceAndReset(t *testing.T) {
 	if len(got[0].Actions) != 2 {
 		t.Fatalf("1. Yes 这种该带 允许/拒绝: %+v", got[0])
 	}
+	if got[0].Body != "Do you want to proceed? · 1. Yes / 2. No" {
+		t.Fatalf("正文该是问题加选项: %q", got[0].Body)
+	}
 	if got := ev.observe(sess, cap); len(got) != 0 {
 		t.Fatalf("同一次等待不该重复发: %+v", got)
 	}

@@ -24,7 +24,8 @@ func newSessionEvents() *sessionEvents { return &sessionEvents{state: map[string
 
 // yesNo：屏幕上能确定是 y/n 或「1. Yes」这类二选一时，通知上才给 允许 / 拒绝 按钮，
 // 不然只给「打开」——按错一格会话就没了
-var yesNoPat = regexp.MustCompile(`(?i)\((?:y/n|yes/no|y/N|Y/n)\)|\[y/n\]|1\.\s*(?:yes|allow|approve|是|允许)`)
+var yesNoPat = regexp.MustCompile(`(?i)\((?:y/n|yes/no|y/N|Y/n)\)|\[y/n\]`)
+var yesFirst = regexp.MustCompile(`(?i)^(yes|allow|approve|ok|continue|proceed|是|允许|确认|继续)\b`)
 
 // observe 喂一轮观察：sessions = 活会话 name → label；capture 由调用方按需抓。
 // 返回这一轮该发的事件。
@@ -45,9 +46,9 @@ func (e *sessionEvents) observe(sessions map[string]string, capture func(name st
 		st.streak++
 		if st.streak >= 2 && !st.notified {
 			st.notified = true
-			body := sessionTail(cap, 120)
-			p := PushPayload{Type: "session.waiting", Session: name, Label: label, Title: label, Body: body}
-			if yesNoPat.MatchString(waitStripCtl(cap)) {
+			p := PushPayload{Type: "session.waiting", Session: name, Label: label, Title: label, Body: waitingSummary(cap, 140)}
+			// 第一个选项是 Yes / Allow 这类、或屏上有 (y/n)：通知才带 允许 / 拒绝
+			if _, opts, ok := waitingPrompt(cap); (ok && len(opts) > 0 && yesFirst.MatchString(opts[0])) || yesNoPat.MatchString(waitStripCtl(cap)) {
 				p.Actions = []string{"allow", "deny"}
 			}
 			out = append(out, p)
