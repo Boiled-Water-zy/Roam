@@ -177,6 +177,46 @@ func tmuxScroll(name, dir string, lines int) (inCopyMode bool) {
 	return false
 }
 
+// altLinesPerNotch 备用屏里手指位移多少行才发一格滚轮。实测 Claude Code 每格滚轮约滚 1.7 行
+// （tmux 里发 22 格滚了 38 行），按行发格子等于把触控板的位移放大近一倍。2 行一格 ≈ 1:1。
+const altLinesPerNotch = 2
+
+// tmuxScrollAccum 带累积的滚动：普通屏按行原样走 tmuxScroll；备用屏把行数攒到 acc 里，
+// 每 altLinesPerNotch 行发一格滚轮，零头留到下一条消息。acc 由每条连接自己持有。
+func tmuxScrollAccum(name, dir string, lines int, acc *int) (inCopyMode bool) {
+	if dir == "bottom" || lines <= 0 {
+		*acc = 0
+		return tmuxScroll(name, dir, lines)
+	}
+	alt, mouseOn, sgr, w, h := paneState(name)
+	if !alt {
+		*acc = 0
+		return tmuxScroll(name, dir, lines)
+	}
+	if !mouseOn {
+		return false
+	}
+	if dir == "up" {
+		*acc += lines
+	} else {
+		*acc -= lines
+	}
+	n := *acc / altLinesPerNotch
+	if n == 0 {
+		return false
+	}
+	*acc -= n * altLinesPerNotch
+	d, cnt := "up", n
+	if n < 0 {
+		d, cnt = "down", -n
+	}
+	if cnt > maxWheelNotches {
+		cnt = maxWheelNotches
+	}
+	altScreenWheel(name, d, cnt, w, h, sgr)
+	return false
+}
+
 // tmuxSelectPaneAt 把前端点击的单元格坐标(col,row)映射到所在 pane 并激活它。
 // 因为关掉了 tmux 鼠标模式（保住 xterm 本地拖选复制），点击切换 pane 失效；这里在前端
 // 单击(非拖选)时按坐标补回「点哪个 pane 就切到哪个」。divider 上的点击不命中任何 pane → 忽略。
@@ -529,6 +569,7 @@ func Handler(c *gin.Context) {
 	// 当导航键吃掉、到不了 shell，且新输出不再跟随到底。所以真实键入前先退出 copy-mode，
 	// 让任意按键都像真实终端那样跳回实时提示符。
 	inCopy := false
+	wheelAcc := 0 // 备用屏滚轮的行累积，见 tmuxScrollAccum
 
 	// ws → pty（文本帧若为 resize 控制消息则调整窗口大小，否则当作键入）
 	for {
@@ -578,7 +619,7 @@ func Handler(c *gin.Context) {
 					continue
 				case "scroll":
 					// 普通屏走 copy-mode 才需在真实键入前退出；备用屏 TUI 喂的是滚轮，inCopyMode=false。
-					inCopy = tmuxScroll(name, ctrl.Dir, ctrl.Lines)
+					inCopy = tmuxScrollAccum(name, ctrl.Dir, ctrl.Lines, &wheelAcc)
 					continue
 				case "select-pane":
 					tmuxSelectPaneAt(name, ctrl.Col, ctrl.Row)
