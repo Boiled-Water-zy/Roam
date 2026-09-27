@@ -963,12 +963,15 @@ const Term = forwardRef<TermHandle, {
     let wheelAt = 0
     let wheelFlush = 0
     let wheelCell: Cell | null = null
+    let wheelStarted = false
     const flushWheel = () => {
       wheelFlush = 0
       if (mouseMode.current.on) {
-        // 全屏 TUI：前端直接写鼠标序列，一帧一条，不经后端
-        const n = Math.trunc(wheelAcc / WHEEL_LINES_PER_NOTCH)
-        if (n !== 0) { wheelAcc -= n * WHEEL_LINES_PER_NOTCH; sendWheelReports(n < 0 ? 'up' : 'down', Math.abs(n), wheelCell) }
+        // 全屏 TUI：前端直接写鼠标序列，一帧一条，不经后端。
+        // 起手那一格一行就发（轻轻一搭就有反应），之后每 WHEEL_LINES_PER_NOTCH 行一格
+        const step = wheelStarted ? WHEEL_LINES_PER_NOTCH : 1
+        const n = Math.trunc(wheelAcc / step)
+        if (n !== 0) { wheelAcc -= n * step; wheelStarted = true; sendWheelReports(n < 0 ? 'up' : 'down', Math.abs(n), wheelCell) }
         return
       }
       const n = Math.trunc(wheelAcc)
@@ -976,7 +979,7 @@ const Term = forwardRef<TermHandle, {
     }
     const onWheel = (e: WheelEvent) => {
       const now = performance.now()
-      if (now - wheelAt > 300) wheelAcc = 0 // 停顿过就不把上一次剩的零头带进来
+      if (now - wheelAt > 300) { wheelAcc = 0; wheelStarted = false } // 停顿过就不把上一次剩的零头带进来，下次起手重新算
       wheelAt = now
       const rows = termRef.current?.rows || 24
       wheelAcc += e.deltaMode === 1 ? e.deltaY : e.deltaMode === 2 ? e.deltaY * rows : e.deltaY / lineH()
