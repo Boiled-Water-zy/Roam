@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	creackpty "github.com/creack/pty"
@@ -183,29 +184,48 @@ const altLinesPerNotch = 2
 
 // tmuxScrollAccum 带累积的滚动：普通屏按行原样走 tmuxScroll；备用屏把行数攒到 acc 里，
 // 每 altLinesPerNotch 行发一格滚轮，零头留到下一条消息。acc 由每条连接自己持有。
-func tmuxScrollAccum(name, dir string, lines int, acc *int) (inCopyMode bool) {
+// wheelState 每条连接一份：行累积 + 屏幕状态缓存。paneState 要起一个 tmux 进程，
+// 一次滑动几十条消息逐条查等于几十个进程，滚起来一卡一卡；300ms 内当它没变。
+type wheelState struct {
+	acc     int
+	alt     bool
+	mouseOn bool
+	sgr     bool
+	w, h    int
+	at      time.Time
+}
+
+func (ws *wheelState) refresh(name string) {
+	if time.Since(ws.at) < 300*time.Millisecond {
+		return
+	}
+	ws.alt, ws.mouseOn, ws.sgr, ws.w, ws.h = paneState(name)
+	ws.at = time.Now()
+}
+
+func tmuxScrollAccum(name, dir string, lines int, ws *wheelState) (inCopyMode bool) {
 	if dir == "bottom" || lines <= 0 {
-		*acc = 0
+		ws.acc = 0
 		return tmuxScroll(name, dir, lines)
 	}
-	alt, mouseOn, sgr, w, h := paneState(name)
-	if !alt {
-		*acc = 0
+	ws.refresh(name)
+	if !ws.alt {
+		ws.acc = 0
 		return tmuxScroll(name, dir, lines)
 	}
-	if !mouseOn {
+	if !ws.mouseOn {
 		return false
 	}
 	if dir == "up" {
-		*acc += lines
+		ws.acc += lines
 	} else {
-		*acc -= lines
+		ws.acc -= lines
 	}
-	n := *acc / altLinesPerNotch
+	n := ws.acc / altLinesPerNotch
 	if n == 0 {
 		return false
 	}
-	*acc -= n * altLinesPerNotch
+	ws.acc -= n * altLinesPerNotch
 	d, cnt := "up", n
 	if n < 0 {
 		d, cnt = "down", -n
@@ -213,7 +233,7 @@ func tmuxScrollAccum(name, dir string, lines int, acc *int) (inCopyMode bool) {
 	if cnt > maxWheelNotches {
 		cnt = maxWheelNotches
 	}
-	altScreenWheel(name, d, cnt, w, h, sgr)
+	altScreenWheel(name, d, cnt, ws.w, ws.h, ws.sgr)
 	return false
 }
 
@@ -569,7 +589,7 @@ func Handler(c *gin.Context) {
 	// 当导航键吃掉、到不了 shell，且新输出不再跟随到底。所以真实键入前先退出 copy-mode，
 	// 让任意按键都像真实终端那样跳回实时提示符。
 	inCopy := false
-	wheelAcc := 0 // 备用屏滚轮的行累积，见 tmuxScrollAccum
+	wheel := &wheelState{} // 备用屏滚轮的行累积与屏幕状态缓存，见 tmuxScrollAccum
 
 	// ws → pty（文本帧若为 resize 控制消息则调整窗口大小，否则当作键入）
 	for {
@@ -619,7 +639,7 @@ func Handler(c *gin.Context) {
 					continue
 				case "scroll":
 					// 普通屏走 copy-mode 才需在真实键入前退出；备用屏 TUI 喂的是滚轮，inCopyMode=false。
-					inCopy = tmuxScrollAccum(name, ctrl.Dir, ctrl.Lines, &wheelAcc)
+					inCopy = tmuxScrollAccum(name, ctrl.Dir, ctrl.Lines, wheel)
 					continue
 				case "select-pane":
 					tmuxSelectPaneAt(name, ctrl.Col, ctrl.Row)

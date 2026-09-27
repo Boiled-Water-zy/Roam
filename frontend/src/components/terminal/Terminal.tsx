@@ -935,16 +935,22 @@ const Term = forwardRef<TermHandle, {
     // 滚轮按像素累积、够一行才发一行（同上面触摸那条路）。以前每个事件至少算 1 行：触控板
     // 一次轻滑连发几十个几像素的事件，每个都变成一行，Claude 那种全屏 TUI 里一下就飞出去几屏。
     // deltaMode 1 = 按行、2 = 按页（Firefox / 部分鼠标驱动），也换算成行。
+    // 攒到一帧再发一条：触控板一秒几十个事件，逐条发后端每条都要起 tmux 进程，直接堵成一卡一卡
     let wheelAcc = 0
     let wheelAt = 0
+    let wheelFlush = 0
+    const flushWheel = () => {
+      wheelFlush = 0
+      const n = Math.trunc(wheelAcc)
+      if (n !== 0) { wheelAcc -= n; sendScroll(n < 0 ? 'up' : 'down', Math.abs(n)) }
+    }
     const onWheel = (e: WheelEvent) => {
       const now = performance.now()
       if (now - wheelAt > 300) wheelAcc = 0 // 停顿过就不把上一次剩的零头带进来
       wheelAt = now
       const rows = termRef.current?.rows || 24
       wheelAcc += e.deltaMode === 1 ? e.deltaY : e.deltaMode === 2 ? e.deltaY * rows : e.deltaY / lineH()
-      const n = Math.trunc(wheelAcc)
-      if (n !== 0) { wheelAcc -= n; sendScroll(n < 0 ? 'up' : 'down', Math.abs(n)) }
+      if (!wheelFlush) wheelFlush = window.setTimeout(flushWheel, 40)
       e.preventDefault(); e.stopPropagation()
     }
     const onMouseUp = (e: MouseEvent) => {
