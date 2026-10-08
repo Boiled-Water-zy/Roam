@@ -259,6 +259,10 @@ type cBlock struct {
 	IsError   bool   `json:"isError,omitempty"`   // tool_result 是否报错
 }
 
+// harnessNote 工具读图后宿主自动附带的尺寸说明（[Image: original 1080x2340, displayed at …]）。
+// 它在转录里挂在 user 角色下，但不是人说的话，画成气泡只会让人以为自己发过这句。
+var harnessNote = regexp.MustCompile(`^\[Image: original \d+x\d+, displayed at [^\]]*\]$`)
+
 type cMsg struct {
 	Role   string   `json:"role"` // user | assistant | tool
 	Blocks []cBlock `json:"blocks"`
@@ -330,7 +334,7 @@ func parseLine(line string) *cMsg {
 	var str string
 	if json.Unmarshal(raw.Message.Content, &str) == nil {
 		str = strings.TrimSpace(str)
-		if str == "" {
+		if str == "" || harnessNote.MatchString(str) {
 			return nil
 		}
 		return &cMsg{Role: "user", Ts: raw.Ts, ID: raw.UUID, Blocks: []cBlock{{Kind: "text", Text: clip(str)}}}
@@ -357,7 +361,7 @@ func parseLine(line string) *cMsg {
 	for _, b := range arr {
 		switch b.Type {
 		case "text":
-			if t := strings.TrimSpace(b.Text); t != "" {
+			if t := strings.TrimSpace(b.Text); t != "" && !(role == "user" && harnessNote.MatchString(t)) {
 				blocks = append(blocks, cBlock{Kind: "text", Text: clip(t)})
 			}
 		case "thinking":

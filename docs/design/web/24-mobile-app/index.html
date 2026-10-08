@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roami 手机 App</title>
+<style>
+/* ── 令牌：直接取 frontend/src/theme.tsx 的真值（与 23 稿同一份）──────────── */
+:root {
+  --bg-base:#0d1117; --bg-container:#161b22; --bg-elevated:#1b222b; --bg-term:#06090d;
+  --border:#30363d; --border-subtle:#21262d;
+  --text-bright:#e6edf3; --text-dim:#8b949e; --text-dimmer:#6e7681;
+  --accent:#58a6ff; --accent-solid:#1f6feb; --accent-soft:rgba(31,111,235,.14); --accent-border:rgba(88,166,255,.45);
+  --ok:#3fb950; --ok-solid:#238636; --ok-soft:rgba(63,185,80,.14); --ok-border:rgba(63,185,80,.42);
+  --danger:#f85149; --danger-soft:rgba(248,81,73,.12); --danger-border:rgba(248,81,73,.40);
+  --warn:#d29922; --warn-soft:rgba(210,153,34,.12); --warn-border:rgba(210,153,34,.40);
+  --swarm:#a371f7; --swarm-soft:rgba(163,113,247,.12);
+  --brand-claude:#d97757; --brand-codex:#e6edf3;
+  --list-hover:rgba(255,255,255,.045);
+  --fs-micro:11px; --fs-meta:12px; --fs-sm:13px; --fs-body:14px; --fs-lg:16px; --fs-title:22px;
+  --r-xs:6px; --r-sm:10px; --r-card:14px; --r-pill:999px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --page-bg:#07090d;
+}
+html[data-theme="light"], html:not([data-theme="dark"]) { }
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]) {
+  --bg-base:#f6f8fa; --bg-container:#ffffff; --bg-elevated:#ffffff; --bg-term:#ffffff;
+  --border:#d0d7de; --border-subtle:#e6e9ec;
+  --text-bright:#1f2328; --text-dim:#57606a; --text-dimmer:#8c959f;
+  --accent:#0969da; --accent-solid:#1f6feb; --accent-soft:rgba(31,111,235,.10); --accent-border:rgba(31,111,235,.40);
+  --ok:#1a7f37; --ok-solid:#1f883d; --ok-soft:rgba(31,136,61,.10); --ok-border:rgba(31,136,61,.40);
+  --danger:#cf222e; --danger-soft:rgba(207,34,46,.09); --danger-border:rgba(207,34,46,.35);
+  --warn:#9a6700; --warn-soft:rgba(154,103,0,.10); --warn-border:rgba(154,103,0,.35);
+  --swarm:#8250df; --swarm-soft:rgba(130,80,223,.10);
+  --brand-codex:#1f2328;
+  --list-hover:rgba(27,31,36,.05);
+  --page-bg:#eef1f5;
+  }
+}
+* { box-sizing:border-box }
+html,body { margin:0; background:var(--page-bg); color:var(--text-bright); font:var(--fs-body)/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans CJK SC",sans-serif }
+a { color:var(--accent); text-decoration:none } a:hover { text-decoration:underline }
+code,kbd { font-family:var(--mono); font-size:.92em; background:var(--bg-container); border:1px solid var(--border-subtle); border-radius:var(--r-xs); padding:1px 6px }
+.wrap { max-width:1120px; margin:0 auto; padding:32px 20px 96px }
+.eyebrow { color:var(--text-dimmer); font-size:var(--fs-meta); letter-spacing:.06em; text-transform:uppercase }
+h1 { font-size:34px; line-height:1.2; margin:6px 0 10px }
+h2 { font-size:var(--fs-title); margin:56px 0 14px; padding-top:18px; border-top:1px solid var(--border-subtle) }
+h2 small { color:var(--text-dimmer); font-size:var(--fs-meta); font-weight:400; margin-left:10px }
+h3 { font-size:var(--fs-lg); margin:26px 0 8px }
+p { margin:8px 0 }
+.lead { color:var(--text-dim); font-size:var(--fs-lg); max-width:860px }
+.hero { padding:28px; border:1px solid var(--border); border-radius:var(--r-card); background:linear-gradient(135deg,var(--bg-container),var(--bg-base)); }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:22px 0 0 }
+.stat { padding:14px; border:1px solid var(--border-subtle); border-radius:var(--r-sm); background:var(--bg-base) }
+.stat b { display:block; font-size:26px; line-height:1.1 } .stat span { color:var(--text-dim); font-size:var(--fs-meta) }
+.toc { columns:2; column-gap:32px; margin:18px 0; padding:0; list-style:none } .toc li { margin:4px 0; break-inside:avoid } .toc li b { color:var(--text-dimmer); font-family:var(--mono); font-size:var(--fs-meta); margin-right:8px }
+table { border-collapse:collapse; width:100%; margin:12px 0; font-size:var(--fs-sm) }
+th,td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--border-subtle) } th { color:var(--text-dim); font-weight:600; font-size:var(--fs-meta) }
+td:first-child { white-space:nowrap }
+.tag { display:inline-block; padding:1px 8px; border-radius:var(--r-pill); font-size:var(--fs-micro); border:1px solid var(--border); color:var(--text-dim) }
+.tag.ok { color:var(--ok); border-color:var(--ok-border); background:var(--ok-soft) } .tag.warn { color:var(--warn); border-color:var(--warn-border); background:var(--warn-soft) } .tag.bad { color:var(--danger); border-color:var(--danger-border); background:var(--danger-soft) } .tag.acc { color:var(--accent); border-color:var(--accent-border); background:var(--accent-soft) }
+.grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px }
+.card { padding:16px 18px; border:1px solid var(--border); border-radius:var(--r-card); background:var(--bg-container) }
+.card h4 { margin:0 0 6px; font-size:var(--fs-body) } .card p,.card li { color:var(--text-dim); font-size:var(--fs-sm) } .card ul { margin:6px 0 0; padding-left:18px }
+.card.acc { border-color:var(--accent-border); background:var(--accent-soft) } .card.ok { border-color:var(--ok-border); background:var(--ok-soft) } .card.warn { border-color:var(--warn-border); background:var(--warn-soft) } .card.bad { border-color:var(--danger-border); background:var(--danger-soft) } .card.swarm { border-color:var(--swarm); background:var(--swarm-soft) }
+/* 架构带：横向盒子 + 箭头 */
+.flow { display:flex; flex-wrap:wrap; align-items:stretch; gap:8px; margin:14px 0 }
+.flow .box { flex:1 1 150px; padding:12px 14px; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--bg-container); font-size:var(--fs-sm) } .flow .box b { display:block; margin-bottom:2px } .flow .box span { color:var(--text-dim); font-size:var(--fs-meta) }
+.flow .arr { align-self:center; color:var(--text-dimmer); font-family:var(--mono); padding:0 2px }
+/* 横条图 */
+.bars { margin:10px 0 } .bar { display:grid; grid-template-columns:200px 1fr 70px; align-items:center; gap:10px; margin:6px 0; font-size:var(--fs-sm) } .bar i { display:block; height:10px; border-radius:var(--r-pill); background:var(--accent-solid) } .bar i.ok { background:var(--ok-solid) } .bar i.warn { background:var(--warn) } .bar i.bad { background:var(--danger) } .bar em { color:var(--text-dim); font-style:normal; font-family:var(--mono); font-size:var(--fs-meta) }
+/* 分期 */
+.phases { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin:14px 0 }
+.phase { padding:14px 16px; border:1px solid var(--border); border-radius:var(--r-card); background:var(--bg-container); position:relative } .phase .n { position:absolute; top:-10px; left:14px; padding:0 8px; border-radius:var(--r-pill); background:var(--accent-solid); color:#fff; font-size:var(--fs-micro); font-weight:700 } .phase h4 { margin:6px 0 4px; font-size:var(--fs-body) } .phase p,.phase li { color:var(--text-dim); font-size:var(--fs-sm); margin:4px 0 } .phase ul { margin:4px 0 0; padding-left:16px } .phase .out { margin-top:8px; font-size:var(--fs-meta); color:var(--text-dimmer) }
+/* 手机图纸 */
+.phones { display:flex; flex-wrap:wrap; gap:22px; margin:18px 0; justify-content:flex-start }
+.phone { width:250px; border:1px solid var(--border); border-radius:28px; background:var(--bg-base); padding:12px 10px 10px; box-shadow:0 12px 32px rgba(0,0,0,.35); position:relative; flex:0 0 auto }
+.phone .cap { position:absolute; top:10px; left:50%; transform:translateX(-50%); width:80px; height:22px; border-radius:var(--r-pill); background:#000 }
+.phone .scr { margin-top:22px; border-radius:18px; background:var(--bg-base); min-height:470px; display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--border-subtle) }
+.phone .top { padding:10px 12px 8px; border-bottom:1px solid var(--border-subtle); display:flex; align-items:center; gap:8px; font-size:var(--fs-sm) } .phone .top b { flex:1 } .phone .top .dot { width:8px; height:8px; border-radius:50%; background:var(--ok) } .phone .top .dot.w { background:var(--warn) }
+.phone .body { flex:1; padding:8px 10px; font-size:var(--fs-meta); overflow:hidden }
+.phone .row { display:flex; align-items:center; gap:8px; padding:9px 8px; border-radius:var(--r-sm); margin-bottom:6px; background:var(--bg-container); border:1px solid var(--border-subtle) } .phone .row .ic { width:22px; height:22px; border-radius:6px; display:grid; place-items:center; font-size:10px; color:#fff; background:var(--accent-solid); flex:0 0 auto } .phone .row .ic.w { background:var(--warn) } .phone .row .ic.c { background:var(--brand-claude) } .phone .row .ic.g { background:var(--ok-solid) } .phone .row .t { flex:1; min-width:0 } .phone .row .t b { display:block; font-size:var(--fs-meta); white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .phone .row .t span { color:var(--text-dim); font-size:var(--fs-micro); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .phone .row em { color:var(--text-dimmer); font-style:normal; font-size:var(--fs-micro) }
+.phone .row.hot { border-color:var(--warn-border); background:var(--warn-soft) }
+.phone .sec { color:var(--text-dimmer); font-size:var(--fs-micro); margin:8px 4px 4px; letter-spacing:.04em }
+.phone .msg { padding:8px 10px; border-radius:var(--r-sm); margin:6px 0; background:var(--bg-container); font-size:var(--fs-micro); line-height:1.5; color:var(--text-dim) } .phone .msg.me { background:var(--accent-soft); color:var(--text-bright); margin-left:30px }
+.phone .perm { border:1px solid var(--warn-border); background:var(--warn-soft); border-radius:var(--r-sm); padding:8px 10px; margin:6px 0 } .phone .perm b { display:block; font-size:var(--fs-meta); margin-bottom:4px } .phone .perm code { font-size:10px } .phone .perm .acts { display:flex; gap:6px; margin-top:8px } .phone .perm .acts span { flex:1; text-align:center; padding:6px 0; border-radius:var(--r-xs); font-size:var(--fs-micro); border:1px solid var(--border) } .phone .perm .acts span.y { background:var(--ok-solid); border-color:var(--ok-solid); color:#fff }
+.phone .input { display:flex; gap:6px; padding:8px 10px; border-top:1px solid var(--border-subtle) } .phone .input i { flex:1; height:32px; border-radius:var(--r-pill); border:1px solid var(--border); background:var(--bg-container); font-style:normal; color:var(--text-dimmer); font-size:var(--fs-micro); display:flex; align-items:center; padding:0 12px } .phone .input s { width:32px; height:32px; border-radius:50%; background:var(--accent-solid); text-decoration:none }
+.phone .nav { display:flex; border-top:1px solid var(--border-subtle); padding:6px 4px 8px } .phone .nav span { flex:1; text-align:center; font-size:10px; color:var(--text-dimmer) } .phone .nav span.on { color:var(--accent) } .phone .nav span b { display:block; width:18px; height:18px; margin:0 auto 2px; border-radius:5px; background:currentColor; opacity:.55 } .phone .nav span .bd { position:relative } .phone .nav span .bd::after { content:"3"; position:absolute; top:-6px; right:-8px; background:var(--danger); color:#fff; border-radius:var(--r-pill); font-size:9px; padding:0 4px; opacity:1 }
+.phone .lock { padding:10px; border-radius:14px; background:rgba(255,255,255,.08); backdrop-filter:blur(6px); margin:8px 0; font-size:var(--fs-micro) } .lock b { display:block; font-size:var(--fs-meta) } .lock .acts { display:flex; gap:6px; margin-top:6px } .lock .acts span { flex:1; text-align:center; padding:5px; border-radius:var(--r-xs); background:rgba(255,255,255,.14) }
+.phone .top .pillx { flex:1; display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:var(--r-pill); border:1px solid var(--border); background:var(--bg-container); font-size:var(--fs-micro); min-width:0; white-space:nowrap; overflow:hidden } .phone .top .pillx em { font-style:normal; background:var(--accent-solid); color:#fff; border-radius:var(--r-pill); padding:0 5px; font-size:9px }
+.phone .top .agentx { width:26px; height:26px; border-radius:7px; background:var(--accent-soft); border:1px solid var(--accent-border); display:grid; place-items:center; color:var(--brand-claude); font-size:12px }
+.phone .tstamp { color:var(--text-dimmer); font-size:9px; margin:2px 4px 6px } .phone .tstamp span { margin-left:8px }
+.phone .toolrow { display:flex; align-items:center; gap:5px; padding:7px 8px 7px 10px; border-radius:var(--r-xs); background:var(--bg-container); margin:4px 0; font-size:10px; position:relative; color:var(--text-dim) } .phone .toolrow i { position:absolute; left:0; top:0; bottom:0; width:3px; border-radius:2px 0 0 2px } .phone .toolrow i.g { background:var(--ok) } .phone .toolrow i.b { background:var(--accent) } .phone .toolrow .chev { color:var(--text-dimmer) } .phone .toolrow .tic { color:var(--ok) } .phone .toolrow em { font-style:normal; background:var(--bg-elevated); border-radius:var(--r-pill); padding:0 5px; font-size:9px } .phone .toolrow .n { margin-left:auto; color:var(--text-dimmer) }
+.phone .live { margin:0 0 4px; padding:6px 8px 6px 10px; border-left:3px solid var(--accent); background:var(--bg-container); border-radius:0 var(--r-xs) var(--r-xs) 0; font:9.5px/1.5 var(--mono); color:var(--text-dim); white-space:pre-wrap; overflow:hidden; max-height:64px }
+.phone .sbar { display:flex; gap:8px; align-items:center; padding:6px 10px; border-top:1px solid var(--border-subtle); font-size:9px; color:var(--text-dim); white-space:nowrap; overflow:hidden } .phone .sbar .pl { border:1px solid var(--border); border-radius:var(--r-pill); padding:1px 7px } .phone .sbar .ctx { color:var(--warn) }
+.phone .input2 { padding:8px 10px; border-top:1px solid var(--border-subtle) } .phone .input2 i { display:block; font-style:normal; color:var(--text-dimmer); font-size:var(--fs-micro); padding:6px 4px 10px } .phone .cbar { display:flex; align-items:center; gap:6px } .phone .cbar .rb { width:28px; height:28px; border-radius:50%; border:1px solid var(--border); display:grid; place-items:center; font-size:12px; color:var(--text-dim) } .phone .cbar .rb.solid { background:var(--accent-solid); border-color:var(--accent-solid); color:#fff; font-size:9px } .phone .cbar .pl2 { padding:5px 10px; border-radius:var(--r-pill); border:1px solid var(--accent-border); background:var(--accent-soft); color:var(--accent); font-size:var(--fs-micro) } .phone .cbar .sp { flex:1 }
+.cap2 { color:var(--text-dimmer); font-size:var(--fs-meta); margin-top:8px; width:250px }
+.cap2 .revision { display:block; margin-top:var(--sp-2); padding:var(--sp-2); border-left:3px solid var(--accent); background:var(--accent-soft); border-radius:0 var(--r-xs) var(--r-xs) 0; color:var(--text-bright) }
+.note { padding:12px 16px; border-left:3px solid var(--accent); background:var(--accent-soft); border-radius:0 var(--r-sm) var(--r-sm) 0; margin:14px 0; font-size:var(--fs-sm) } .note.warn { border-color:var(--warn); background:var(--warn-soft) } .note.bad { border-color:var(--danger); background:var(--danger-soft) }
+.kv { display:grid; grid-template-columns:max-content 1fr; gap:6px 16px; font-size:var(--fs-sm) } .kv dt { color:var(--text-dim) } .kv dd { margin:0 }
+pre { background:var(--bg-container); border:1px solid var(--border-subtle); border-radius:var(--r-sm); padding:12px 14px; overflow:auto; font-size:var(--fs-meta); line-height:1.55 } pre code { background:none; border:0; padding:0 }
+.decide { border:1px solid var(--accent-border); border-radius:var(--r-card); padding:14px 18px; margin:14px 0; background:var(--bg-container) } .decide b.q { display:block; margin-bottom:6px } .decide .ans { color:var(--accent); font-weight:600 }
+@media (max-width:640px) { .toc { columns:1 } .bar { grid-template-columns:1fr; gap:4px } h1 { font-size:26px } }
+
+/* §5：按当前手机信息架构绘制的缩略图 */
+.phone .mini-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:var(--sp-2); margin:var(--sp-2) 0 }
+.phone .mini-stats div { min-width:0; padding:var(--sp-2); background:var(--bg-container); border:1px solid var(--border-subtle); border-radius:var(--r-sm) }
+.phone .mini-stats b { display:block; color:var(--text-bright); font-size:var(--fs-lg); line-height:1.2 }
+.phone .mini-stats span { color:var(--text-dim); font-size:var(--fs-micro) }
+.phone .mini-acts { display:flex; flex-wrap:wrap; gap:var(--sp-1); margin-top:var(--sp-2) }
+.phone .mini-acts span { padding:var(--sp-1) var(--sp-2); border:1px solid var(--accent-border); border-radius:var(--r-xs); color:var(--accent); font-size:var(--fs-micro) }
+.phone .mini-search { padding:var(--sp-2); margin-bottom:var(--sp-2); border:1px solid var(--border); border-radius:var(--r-sm); color:var(--text-dimmer) }
+.phone .mini-pills { display:flex; gap:var(--sp-1); white-space:nowrap; overflow:hidden }
+.phone .mini-pills span { padding:var(--sp-1); border:1px solid var(--border); border-radius:var(--r-pill); color:var(--text-dim); font-size:var(--fs-micro) }
+.phone .mini-pills .on { border-color:var(--accent-border); color:var(--accent); background:var(--accent-soft) }
+.phone .mini-project { padding:var(--sp-3); margin:var(--sp-2) 0; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--bg-container) }
+.phone .mini-project > b, .phone .mini-project > span { display:block }
+.phone .mini-project > span { color:var(--text-dim); font-size:var(--fs-micro) }
+.phone .mini-project .row { margin-top:var(--sp-2) }
+.phone .top .back, .phone .top .more { color:var(--text-dim); font-size:var(--fs-micro) }
+.phone .top .pillx { flex:1; justify-content:center }
+.phone .top .agentx { flex:0 0 auto }
+.phone .lock-screen { background:var(--bg-elevated); border:0 }
+.phone .lock-time { text-align:center; padding:var(--sp-5) 0 var(--sp-3); font-size:var(--fs-title) }
+.phone .lock code { background:var(--bg-container); border:0 }
+
+.phone .mini-update { margin:var(--sp-2); padding:var(--sp-2); border:1px solid var(--accent-border); border-radius:var(--r-sm); background:var(--accent-soft) }
+.phone .mini-update b, .phone .mini-update span { display:block; font-size:var(--fs-micro) }
+.phone .mini-update b { color:var(--accent) }
+.phone .mini-update span { color:var(--text-dim) }
+.phone .mini-bell { border:1px solid var(--accent-border); border-radius:var(--r-pill); padding:0 var(--sp-2); color:var(--accent); font-size:var(--fs-micro) }
+.phone .mini-headline { font-size:var(--fs-sm); font-weight:700; margin:var(--sp-2) 0 }
+.phone .mini-resume { border-color:var(--accent-border); background:var(--accent-soft) }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<section class="hero">
+  <div class="eyebrow">docs/design/web · 24 · 2026-10-08 实现对照</div>
+  <h1>Roami 手机 App：让它来找你</h1>
+  <p class="lead">现行手机入口是<b>首页 · 会话 · 我</b>；首页展示当前状态、待处理任务和主机资源。iPhone 使用 PWA 与 Web Push，Android 使用 WebView App 与前台服务 WebSocket。<a href="#s5">§5 的效果图</a>按当前代码和手机截图更新；其余章节保留最初设计推演，涉及 TWA、扫码及四格导航的文字属于历史方案。</p>
+  <div class="stats">
+    <div class="stat"><b>3</b><span>手机底栏：首页、会话、我</span></div>
+    <div class="stat"><b>4</b><span>首页当前状态数字</span></div>
+    <div class="stat"><b>3</b><span>会话事件：等待、完成、错误</span></div>
+    <div class="stat"><b>2</b><span>通知链路：Web Push 与 Android WebSocket</span></div>
+    <div class="stat"><b>1</b><span>全屏当前会话与切换面板</span></div>
+    <div class="stat"><b>0</b><span>Roami 项目方中心服务</span></div>
+  </div>
+</section>
+
+<div class="note"><b>2026-10-08 实现对照（deploy/local @ fce6e3c）</b>：手机首页、按项目分组的会话页、项目详情、通知记录、PWA Web Push、离线只读快照，以及 Android Kotlin WebView App 与前台服务 WebSocket 已有代码。底栏是「首页 · 会话 · 我」；通知从首页右上角进入；手机只显示当前会话，切换面板列「需要你」和最近会话。<code>session.done</code> 目前只识别 Claude 转录。此处是代码盘点，不代表 Android/iPhone 真机验收或 PR 已完成。§5 效果图按现行手机信息架构绘制。</div>
+
+<ol class="toc">
+  <li><b>§1</b><a href="#s1">调研：Lody 移动端做了什么、怎么做的</a></li>
+  <li><b>§2</b><a href="#s2">现状：手机网页版今天是什么样</a></li>
+  <li><b>§3</b><a href="#s3">为什么「用着不舒服」：十一处反例</a></li>
+  <li><b>§4</b><a href="#s4">路线：PWA + Web Push，Android 用 TWA 包成 App</a></li>
+  <li><b>§5</b><a href="#s5">现行信息架构与效果图</a></li>
+  <li><b>§6</b><a href="#s6">通知与批权限：事件总线 → 推送 → 可操作通知</a></li>
+  <li><b>§7</b><a href="#s7">接入：连通性和证书都是部署者的事</a></li>
+  <li><b>§8</b><a href="#s8">工程：目录、插件、构建与分发</a></li>
+  <li><b>§9</b><a href="#s9">契约：新接口与事件</a></li>
+  <li><b>§10</b><a href="#s10">分期与验收</a></li>
+  <li><b>§11</b><a href="#s11">风险</a></li>
+  <li><b>§12</b><a href="#s12">待拍板</a></li>
+</ol>
+
+<h2 id="s1">§1 调研：Lody 移动端<small>github.com/LodyAI/Lody · 手机端闭源，仓库里只有 cli 与 electron</small></h2>
+<p>Lody 的 iOS 走 App Store 与 TestFlight，Android 发签名 APK；仓库里没有手机端代码，能模仿的是功能清单和分工，不是实现。它的文档（site-docs/(features)/mobile.mdx、notification.mdx）把手机端定义得很窄，恰恰是值得抄的地方：</p>
+<div class="grid2">
+  <div class="card acc"><h4>通知（三种事件）</h4><p>对话结束 · 请求权限 · 发生错误。设置 › 通用 › 推送通知 一个开关。桌面是浏览器通知，手机是原生推送。</p></div>
+  <div class="card acc"><h4>iOS 实时活动</h4><p>锁屏和灵动岛上显示正在跑的 agent 状态；agent 要权限时发一条<b>可直接操作</b>的实时活动，在锁屏上批。</p></div>
+  <div class="card"><h4>监控进度</h4><p>实时终端输出、文件改动、会话 diff 与 review 评论、图片预览（长按分享保存）。</p></div>
+  <div class="card"><h4>浏览项目文件</h4><p>Projects 标签打开项目 → Files 浏览目录树、预览文本。<b>不用先建会话</b>。手机不能编辑。</p></div>
+  <div class="card"><h4>离线</h4><p>缓存的对话、保存过的 diff 离线能看；联网后自动同步。</p></div>
+  <div class="card"><h4>派活</h4><p>从手机把任务派到任何一台已连接的机器；权限请求、进度、改动在各端同时可见。</p></div>
+</div>
+<h3>它为什么做得顺</h3>
+<p>两个架构决定让手机端变成薄客户端：<b>agent 走 ACP 协议</b>给结构化消息（权限请求是一条带 id 的消息，不是屏幕上的一个框）；<b>数据靠 Loro CRDT 经它的云端中转</b>，手机端天然离线优先。Roami 的底座是 tmux 加转录文件、手机直连自己的机器，这两件事得自己做：「权限请求」要从抓屏里认出来（已经在做，见 §2），「离线」要自己缓存。</p>
+<div class="note">抄功能清单，不抄架构。Roami 保留 tmux 底座的理由（agent 原样、任何 TUI 都能跑、不依赖云）在 22 稿已经定了，手机版不推翻它。</div>
+<h3>别家怎么做（2026-09）</h3>
+<table>
+  <tr><th>产品</th><th>手机端形态</th><th>值得抄的</th><th>不抄的</th></tr>
+  <tr><td>Codex（ChatGPT App 内，2026-05）</td><td>不是独立 App，是 ChatGPT 里一个入口：扫 Mac 端二维码接管本机 Codex；一张 threads 列表，审批、diff、终端输出、换模型、往跑着的任务里插一句，都在线程页里</td><td><b>没有单独的收件箱</b>——需要你批的就在线程列表顶上；<b>扫码配对</b>；<b>往跑着的任务里插话</b>（Roami 有 <code>/tasks/_/send</code>，手机上该是输入栏常态）</td><td>只能接管一台机；云端 sandbox 那半 Roami 没有</td></tr>
+  <tr><td>GitHub Mobile</td><td>底栏 Home / Notifications / Explore / Profile；通知收件箱按仓库分组、可过滤「需要我」、左右滑标记已读 / 完成；PR 页能逐文件看 diff、直接 Approve</td><td><b>收件箱的过滤与滑动手势</b>；<b>PR 页逐文件 diff + 一键批</b>（Roami 的 PR 卡该长成这一页）</td><td>Explore 那种发现流，Roami 没有</td></tr>
+  <tr><td>Lody</td><td>Projects / Files / 会话；推送三种事件；锁屏实时活动批权限；文件只读</td><td>三种事件的口径；不建会话就能看文件</td><td>手机端闭源，架构靠云中转</td></tr>
+  <tr><td>Claude Code（claude.ai/code 手机浏览器）</td><td>会话列表 + 会话页，每行带状态与最近一句；权限请求在会话页内成卡片</td><td>会话行的「状态 + 最近一句」正是 <code>/projects</code> 的 <code>tail</code></td><td>—</td></tr>
+</table>
+<p>三条修正落进 §5：① 会话列表顶上钉一段「需要你」，不用先去收件箱再跳；② 输入栏在 agent 跑着时也常在，插话即发（Codex 的做法）；③ 项目页里的 PR 卡长成一页，逐文件 diff。</p>
+
+<h2 id="s2">§2 现状：手机网页版今天是什么样<small>审计对象 task-ws-pr1 @ 2922f07 · 行号见 24-mobile-app.md §2</small></h2>
+<p>一句话：<b>已经是「能在床上救火」的水平，但完全是被动的</b>——你必须先想起来打开它。</p>
+<div class="bars">
+  <div class="bar"><span>布局体系（useLayout / 令牌 / 安全区）</span><i class="ok" style="width:90%"></i><em>M1 ✓</em></div>
+  <div class="bar"><span>外壳（底栏 4 格 / 更多 sheet / 会话坞 / 返回键）</span><i class="ok" style="width:75%"></i><em>M2 ◐</em></div>
+  <div class="bar"><span>会话页（胶囊头 / ⋯ / 输入面板 / DPad / 键盘 fit）</span><i class="ok" style="width:95%"></i><em>M3 ✓</em></div>
+  <div class="bar"><span>逐页塌陷（浏览器 / 镜像页零窄屏分支）</span><i class="warn" style="width:50%"></i><em>M4 ◐</em></div>
+  <div class="bar"><span>平板与横屏（medium 轨 / 横屏都无人消费）</span><i class="warn" style="width:35%"></i><em>M5 ◐</em></div>
+  <div class="bar"><span>22 稿 D 期（手机树 / chips / 树进更多）</span><i class="bad" style="width:15%"></i><em>D ✗</em></div>
+  <div class="bar"><span>通知 / 推送 / 角标</span><i class="bad" style="width:2%"></i><em>0</em></div>
+  <div class="bar"><span>离线（sw 只缓外壳）</span><i class="bad" style="width:8%"></i><em>壳</em></div>
+</div>
+<table>
+  <tr><th>项</th><th>今天</th><th>离 Lody 的距离</th></tr>
+  <tr><td>通知</td><td>零。无 Web Push、无 Notification API、无 Badge。「会话在等你」只活在你打开的页面里；IM 插件的 sink 只收 cron / review / keepalive 五种事件</td><td><span class="tag bad">最远</span></td></tr>
+  <tr><td>批权限</td><td>能批：抓屏 1.2s 一轮认出选择框 → 画成按钮 → <code>/keys</code> 白名单 12 键 + 单个字母数字，选中带二次核对。但你得自己发现有东西要批</td><td><span class="tag warn">原料齐、入口缺</span></td></tr>
+  <tr><td>监控</td><td><code>/projects</code> 的 <code>needs[]</code> + <code>tail</code> 够画一屏「谁在等你」，手机上却被 <code>hasSider</code> 挡掉一半数据（worktree 不拉），也没有这一屏</td><td><span class="tag warn">数据在、页面无</span></td></tr>
+  <tr><td>文件</td><td>能读能预览能编辑，Range 齐全；手机没有树、没有右栏，worktree 面板无入口</td><td><span class="tag warn"></span></td></tr>
+  <tr><td>离线</td><td>sw 只缓外壳，断网打开是个空壳；唯一拦的 /api 是 file/raw 的 P2P 旁路</td><td><span class="tag bad"></span></td></tr>
+  <tr><td>公网访问</td><td>部署层隧道（frp / Cloudflare / Tailscale）或 cluster hub 反代；自签证书要手装 CA；改 <code>tls_san</code> 得删旧证书才生效</td><td><span class="tag warn">App 能根治</span></td></tr>
+  <tr><td>安装</td><td>PWA 引导写得很细（iOS / Android / 桌面三套图文），入口只有 设置 › 关于</td><td><span class="tag warn"></span></td></tr>
+</table>
+
+<h2 id="s3">§3 为什么「用着不舒服」<small>十一处反例，每条对应 §5 / §6 里的一个改法</small></h2>
+<table>
+  <tr><th>#</th><th>现象</th><th>根因（代码）</th><th>去哪儿修</th></tr>
+  <tr><td>1</td><td>手机上没有项目树，会话切换靠一个 sheet</td><td><code>&lt;Sider&gt;</code> 整块 <code>hasSider &amp;&amp;</code>；22 稿 D 期「compact 项目页整页树」没做</td><td>§5 会话页 / 项目页</td></tr>
+  <tr><td>2</td><td>不知道谁在等我，得一个个点开看</td><td>「等你」只在 SessionDock 画黄点；无收件箱、无推送</td><td>§5 收件箱 · §6</td></tr>
+  <tr><td>3</td><td>agent 要权限了我不知道，回来发现它等了半小时</td><td><code>sessionWaiting</code> 从未变成 <code>notification.publish</code></td><td>§6 事件总线</td></tr>
+  <tr><td>4</td><td>浏览器页 / 手机镜像页在手机上是桌面布局硬缩</td><td>BrowserView / PhoneView 零 <code>useLayout</code>；只改了 CSS 自适应</td><td>§5 不进底栏一级页</td></tr>
+  <tr><td>5</td><td>二级页没有边缘右滑返回，只能点左上角</td><td><code>useBackDismiss</code> 只接物理返回键；antd Drawer 在 compact 下无降级</td><td>§8 Capacitor App 插件接 iOS 手势 + 安卓返回</td></tr>
+  <tr><td>6</td><td>768 的 iPad 竖屏被当成手机</td><td><code>phone = compact || medium</code>；全站 0 处 <code>size==='medium'</code> 分支</td><td>§5 平板留给桌面布局</td></tr>
+  <tr><td>7</td><td>第一次用要装 CA 证书，装错了麦克风、剪贴板全不能用</td><td>自签证书 + 浏览器安全上下文；改 SAN 还得删旧证书</td><td>§7 证书固定，App 内置信任</td></tr>
+  <tr><td>8</td><td>输入条在触屏笔记本上也出现，手机上打字时才升起</td><td>输入框条件是 <code>coarse</code>，快捷键条是 <code>coarse &amp;&amp; (!phone || typing)</code>，两套判据混用</td><td>§5 会话页统一按 App 档</td></tr>
+  <tr><td>9</td><td>切到后台一会儿回来，终端要重连、对话要重拉</td><td>WebSocket 无后台保活策略；无本地缓存</td><td>§8 App 生命周期 · §10 M-D 离线</td></tr>
+  <tr><td>10</td><td>状态条没有，分支、机器负载看不到</td><td>手机不常驻状态条（底部已两层）</td><td>§5 塞进会话页胶囊头的展开态</td></tr>
+  <tr><td>11</td><td>安装入口藏在 设置 › 关于</td><td>PWA 引导只挂在 about-settings</td><td>§7 App 商店 / 二维码取代</td></tr>
+</table>
+
+<h2 id="s4">§4 路线：PWA + Web Push，Android 用 TWA 包成 App<small>不是 Electron（它出不了手机），不是 Capacitor（收不到 Web Push），也不重写</small></h2>
+<p>先定约束，再选技术：<b>Roami 是自托管软件，任何人 <code>install.sh</code> 一下就是一个独立部署</b>。手机版因此不能有「Roami 项目方运营的中心推送服务」，也不能要求部署者去申请 FCM / APNs 账号。能满足这条的推送只有一种：<b>Web Push</b>——标准协议，每个部署首次启动自己生成一对 VAPID 密钥，浏览器厂商的推送网关免费、匿名、不需要注册。</p>
+<table>
+  <tr><th>路线</th><th>是什么</th><th>推送</th><th>中心依赖</th><th>结论</th></tr>
+  <tr><td>PWA 加到主屏</td><td>现有前端；iOS 16.4+ / Android Chrome 都支持安装、推送、角标</td><td>Web Push ✓</td><td>无</td><td><span class="tag ok">iOS 与 Android 的底座</span></td></tr>
+  <tr><td>Android TWA（Bubblewrap）</td><td>谷歌官方的「把 PWA 包成 Play 应用」：跑在 Chrome 引擎里，有图标、全屏、能上 Play；部署者一条命令打自己的 APK</td><td>Web Push ✓（就是 Chrome 的）</td><td>无</td><td><span class="tag ok">Android 的「App」</span></td></tr>
+  <tr><td>Capacitor</td><td>原生 WebView 壳 + 原生插件</td><td>WebView 收不到 Web Push；要推就得 FCM / APNs，那是发布者的账号 → 需要中心中转</td><td>有</td><td><span class="tag bad">与自托管冲突</span></td></tr>
+  <tr><td>Electron</td><td>桌面壳</td><td>—</td><td>—</td><td><span class="tag bad">出不了手机</span></td></tr>
+  <tr><td>React Native / Flutter / 原生</td><td>重写</td><td>同 Capacitor 的账号问题</td><td>有</td><td><span class="tag bad">不值</span></td></tr>
+</table>
+<div class="note warn"><b>iOS 没有开发者账号也没关系了</b>：这条路线 iOS 本来就不出包。有账号的部署者想上 App Store 时，把 PWA 用 WKWebView 包一层即可，推送仍走 Web Push 以外的通道需另议——不在本稿范围。</div>
+<div class="decide"><b class="q">「PWA 算真正的 App 吗？」</b>从用户角度：主屏图标、全屏、锁屏通知、角标、后台收推送、Android 上还在 Play 商店里——都有。<span class="ans">缺的只有 iOS 灵动岛实时活动，那需要苹果账号，本稿不做。</span>Lody 的手机端好用不是因为原生，是因为它给手机单独设计了页面，§5 做的就是这件事。</div>
+<div class="flow">
+  <div class="box"><b>frontend/</b><span>同一套 React；<code>data-app="mobile"</code> 时装配手机信息架构</span></div>
+  <div class="arr">→</div>
+  <div class="box"><b>PWA</b><span>manifest + Service Worker：push 监听、可操作通知、角标、离线缓存</span></div>
+  <div class="arr">→</div>
+  <div class="box"><b>iOS</b><span>Safari 加到主屏（16.4+）</span></div>
+  <div class="box"><b>Android</b><span>Chrome 安装，或 Bubblewrap 打 TWA APK / 上 Play</span></div>
+</div>
+
+<h2 id="s5">§5 信息架构：首页 · 会话 · 我 + 全屏会话</h2>
+<p>现行手机底栏三格：<b>首页 · 会话 · 我</b>。首页聚合需要处理的事、运行状态、项目与主机资源；通知入口在首页右上角；点会话列表中的项目标题进入 worktree 详情。会话以全屏覆盖层打开，胶囊头提供「需要你 + 最近」切换面板，没有桌面式的已打开标签。</p>
+<div class="phones">
+  <div>
+    <div class="phone"><div class="cap"></div><div class="scr">
+      <div class="mini-update"><b>App 有新版本 0.3.0</b><span>旧壳用手机浏览器下载安装</span></div>
+      <div class="top"><b>10月8日 · BLADEAI-ZY-G3-3590</b><span class="mini-bell">36</span></div>
+      <div class="body">
+        <div class="mini-headline">下午好，今天有 8 件事需要你</div>
+        <div class="mini-stats"><div><b>0</b><span>等你</span></div><div><b>2</b><span>在跑</span></div><div><b>0</b><span>今天做完</span></div><div><b>10</b><span>待收尾</span></div></div>
+        <div class="row mini-resume"><div class="t"><span>继续上次</span><b>sandbox-os-takeover</b></div></div>
+        <div class="sec">需要你 · 4</div>
+        <div class="row hot"><div class="t"><b>1 个任务待收尾</b><span>Roam · 去收尾</span></div></div>
+        <div class="row hot"><div class="t"><b>7 个任务待收尾</b><span>blade-agent · 去收尾</span></div></div>
+        <div class="row hot"><div class="t"><b>1 个任务待收尾</b><span>blade-os · 去收尾</span></div></div>
+        <div class="row hot"><div class="t"><b>1 个任务待收尾</b><span>llm-gateway · 去收尾</span></div></div>
+      </div>
+      <div class="nav"><span class="on"><b class="bd"></b>首页</span><span><b></b>会话</span><span><b></b>我</span></div>
+    </div></div>
+    <div class="cap2"><b>首页</b>：按截图中的实际顺序展示更新提示、日期与主机、四项状态、继续上次、待收尾任务，向下还能看到运行中、项目和机器资源。通知入口在右上角，不占底栏。</div>
+  </div>
+  <div>
+    <div class="phone"><div class="cap"></div><div class="scr">
+      <div class="top"><b>会话</b><em>新会话</em></div>
+      <div class="body">
+        <div class="mini-search">搜索会话、分支</div>
+        <div class="mini-pills"><span class="on">全部 8</span><span>等你 3</span><span>运行 2</span><span>空闲 3</span></div>
+        <div class="sec">需要你 · 3</div>
+        <div class="row hot"><div class="t"><b>调研智能体吐字</b><span>等你 · 要权限</span></div><em>2m</em></div>
+        <div class="row hot"><div class="t"><b>周报生成</b><span>等你 · 选一个</span></div><em>18m</em></div>
+        <div class="sec">blade-agent · 4</div>
+        <div class="row"><div class="t"><b>llm-large-payload-400</b><span>在跑 · 正在写测试</span></div><em>刚刚</em></div>
+        <div class="sec">Roam · 2</div>
+        <div class="row"><div class="t"><b>chore-sync-latest-sh</b><span>在跑 · 写 24 稿</span></div><em>刚刚</em></div>
+      </div>
+      <div class="nav"><span><b class="bd"></b>首页</span><span class="on"><b></b>会话</span><span><b></b>我</span></div>
+    </div></div>
+    <div class="cap2"><b>会话列表</b>：等待项置顶，再按项目分组；支持搜索、状态筛选和长按重命名、中断、关闭。点项目标题进入 worktree 详情，每组先显示五条。</div>
+  </div>
+  <div>
+    <div class="phone"><div class="cap"></div><div class="scr">
+      <div class="top"><b>blade-agent</b><em>开任务</em></div>
+      <div class="body">
+        <div class="sec">正在使用的工作树</div>
+        <div class="mini-project"><b>feat/agent-typing</b><span>领先 2 · 改动 3</span><div class="row hot"><div class="t"><b>调研智能体吐字</b><span>等你 · git push</span></div></div><div class="mini-acts"><span>Claude</span><span>Codex</span><span>终端</span><span>改动</span></div></div>
+        <div class="mini-project"><b>main</b><span>干净</span><div class="row"><div class="t"><b>blade-agent-shell</b><span>空闲</span></div></div><div class="mini-acts"><span>Claude</span><span>Codex</span><span>终端</span></div></div>
+        <div class="sec">安静的工作树 · 展开</div>
+      </div>
+      <div class="nav"><span><b class="bd"></b>首页</span><span class="on"><b></b>会话</span><span><b></b>我</span></div>
+    </div></div>
+    <div class="cap2"><b>项目详情</b>：从会话列表的项目标题进入。展示工作树状态、所挂会话；可以在指定工作树启动 Claude、Codex、终端或任务，Git 变更打开手机次级页。</div>
+  </div>
+  <div>
+    <div class="phone"><div class="cap"></div><div class="scr">
+      <div class="top"><span class="back">返回</span><span class="pillx"><span class="dot w"></span>调研智能体 · 等你</span><span class="agentx">C</span><span class="more">更多</span></div>
+      <div class="body">
+        <div class="perm"><b>Claude 想运行命令</b><code>git push origin feat/agent-typing</code><div class="acts"><span class="y">允许</span><span>拒绝</span><span>Esc</span></div></div>
+        <div class="msg">已经把三处 tail 调用合成一个 hook，测试 12 个全过。接下来推分支开 PR，需要你确认 push。</div>
+        <div class="tstamp">16:10 <span>复制</span></div>
+        <div class="toolrow"><i class="g"></i><span>终端</span><em>8</em><span>cd ~/workspace/…</span></div>
+        <div class="toolrow"><i class="b"></i><span>实时输出</span></div>
+        <pre class="live">grep -rn "RemoveKeep…" --include="*.go"
+Boondoggling… (8m 27s · thinking)</pre>
+      </div>
+      <div class="sbar"><span class="pl">claude-sonnet</span><span class="ctx">93%</span><span>feat/agent-typing</span></div>
+      <div class="input2"><i>给 调研智能体 发消息…</i><div class="cbar"><span class="rb">+</span><span class="pl2">Claude</span><span class="sp"></span><span class="rb">录音</span><span class="rb solid">发送</span></div></div>
+    </div></div>
+    <div class="cap2"><b>全屏会话</b>：沿用对话/终端双视图和输入区；顶部胶囊显示当前会话状态，点击后出现「需要你 + 最近」切换面板。全屏会话覆盖底栏，不保留手机上的已打开标签。</div>
+  </div>
+  <div>
+    <div class="phone"><div class="cap"></div><div class="scr lock-screen">
+      <div class="lock-time">09:41</div>
+      <div class="lock"><b>Roami · 调研智能体吐字</b>Claude 想运行 <code>git push origin feat/…</code><div class="acts"><span>允许</span><span>拒绝</span></div></div>
+      <div class="lock"><b>Roami · llm-large-payload-400</b>做完了：PR #245 已建</div>
+    </div></div>
+    <div class="cap2"><b>系统通知</b>：等待、完成、错误事件共用后端事件源。PWA 由 Service Worker 接收 Web Push；Android App 由前台服务 WebSocket 显示原生通知。只在可确定的 yes/no 等待项上给允许/拒绝，锁屏外观以系统为准。</div>
+  </div>
+</div>
+<h3>现行页面和数据源</h3>
+<table>
+  <tr><th>入口</th><th>实际实现</th><th>代码位置（deploy/local）</th></tr>
+  <tr><td>首页</td><td>状态、待处理、运行中、项目、主机资源、最近完成与快捷入口</td><td><code>frontend/src/components/mobile/MobileHome.tsx</code></td></tr>
+  <tr><td>会话与项目</td><td>会话总览、项目分组、工作树详情及 Git 次级页</td><td><code>frontend/src/components/mobile/MobileSessions.tsx</code>、<code>MobileProjectDetail.tsx</code></td></tr>
+  <tr><td>全屏会话</td><td>对话/终端双视图、输入、权限交互和会话切换面板</td><td><code>frontend/src/components/terminal/TerminalPane.tsx</code>、<code>components/mobile/MobileSessionSwitch.tsx</code></td></tr>
+  <tr><td>通知记录</td><td>等待、完成、错误事件及已读状态；从首页右上角进入</td><td><code>frontend/src/components/inbox/InboxPage.tsx</code></td></tr>
+  <tr><td>我</td><td>安装、推送、工具、设置、账户与机器入口</td><td><code>frontend/src/components/mobile/MobileMe.tsx</code></td></tr>
+</table>
+<div class="note">这是按代码绘制的结构示意，文字和数据仅作样例。旧版 Android 壳没有应用内下载处理，首页更新提示会给出浏览器安装地址；新版壳才处理应用内下载。手机实机的布局、系统通知外观与交互仍需按 <code>docs/development/web-ui-checklist.md</code> 验收。</div>
+
+<h2 id="s6">§6 通知与批权限<small>App 才有、网页做不到的那部分，也是最先做的部分</small></h2>
+<div class="flow">
+  <div class="box"><b>事件源</b><span>sessionWaiting 状态翻转（idle→waiting，去抖 3s）· agent.exited · review-mesh.done · /git/pr 检查结果翻转</span></div>
+  <div class="arr">→</div>
+  <div class="box"><b>通知总线</b><span>现成的 <code>notification.publish</code> + <code>plugin_notifications</code> 表；新增三种 type（§9）</span></div>
+  <div class="arr">→</div>
+  <div class="box"><b>投递</b><span>新增 sink <code>push.web</code>：VAPID 签名后 POST 到订阅里的推送网关（Apple / Google / Mozilla 的，各家浏览器自带）；IM 插件照旧是另一个 sink</span></div>
+  <div class="arr">→</div>
+  <div class="box"><b>设备</b><span>Service Worker <code>push</code> 事件 → <code>showNotification</code>（带 actions）· <code>setAppBadge</code> = 需要你的条数 · iOS / Android 同一份 sw.js</span></div>
+</div>
+<h3>批权限的链路</h3>
+<ol>
+  <li>后端每轮 <code>/projects</code> 已经在抓屏算 <code>sessionWaiting</code>；把「上一轮 false、这一轮 true」这个翻转发成 <code>session.waiting</code> 事件，带 <code>tail</code>（摘要）和从抓屏解析出的选项（复用 <code>detectPrompt</code> 的 Go 移植 <code>waiting.go</code>，补一个「选项列表」返回）。3 秒去抖，避免 TUI 重绘残帧。</li>
+  <li>推送体：标题 = 会话名，正文 = tail，<code>category=permission</code>，actions = 允许 / 拒绝（只在选项能确定是 y/n 或「1. Yes」这类时才带 action，否则只带「打开」）。</li>
+  <li>点「允许」：Service Worker 的 <code>notificationclick</code> 在后台直接 <code>POST /sessions/:name/keys {"keys":["Enter"]}</code>（或对应数字），不打开页面；成功后把通知改成「已允许」，失败则打开会话页。白名单不变。</li>
+  <li>打开 App：进会话页，权限卡 sticky，下面是对话；卡上的三键与通知上的一样。</li>
+</ol>
+<h3>三种事件，对齐 Lody</h3>
+<table>
+  <tr><th>type</th><th>何时</th><th>推送</th><th>收件箱分段</th></tr>
+  <tr><td><code>session.waiting</code></td><td>会话从跑变成等你（权限框 / 选择框 / y-n）</td><td>是，可操作</td><td>需要你</td></tr>
+  <tr><td><code>session.done</code></td><td>agent 一轮结束（转录里 assistant 收尾且 60s 无新输出）或 agent 退出码 0</td><td>是（可在设置里关）</td><td>刚做完</td></tr>
+  <tr><td><code>session.error</code></td><td>agent 非零退出 / keepalive 判死 / 内存告警（把 <code>memalert</code> 那条也接进总线）</td><td>是</td><td>出错了</td></tr>
+</table>
+<div class="note">Web Push 是唯一通道，不是过渡：iOS PWA、Android PWA、Android TWA 收的都是它。部署者不需要注册任何东西，VAPID 密钥在 <code>~/.roami/push/</code> 首次启动自动生成。</div>
+
+<h2 id="s7">§7 接入：连通性和证书都是部署者的事<small>手机版只认「一个 https 地址 + 一个 token」</small></h2>
+<h3>连通性：不在本稿范围</h3>
+<p>手机得能访问到你部署 Roami 的那个 https 地址——这和桌面浏览器访问 Roami 是同一个前提，手机版<b>没有新增任何要求</b>，Roami 不做也不承诺。内网 WiFi、公司 VPN（WireGuard）、Tailscale、frp、Cloudflare Tunnel，随部署者选，文档只写这一句。对照：Orca 同样不管；Lody 和 Codex 手机版「管了」，方式是各自运营一个云端中转（机器出站连云、手机连云），那是有中心的产品才能做的事，也是它们闭源 / 收费的部分，Roami 是自托管，没有这一层。</p>
+<h3>证书：也是部署者的事，Roami 只提醒</h3>
+<p>PWA 收推送的前提是<b>证书被手机系统信任</b>。Roami 默认自签，桌面浏览器和 Android Chrome 点一次「继续访问」就行，推送照收；<b>iPhone 不认自签</b>，要么在手机上装一次 Roami 的 CA（<code>/cert.crt</code>，设置 › 通用 › VPN 与设备管理 › 安装，再到 关于本机 › 证书信任设置 里打开），要么部署者自己配一张正式证书（有域名的话 acme.sh DNS 验证签 Let's Encrypt，覆盖 <code>~/.roami/tls/</code>）。<b>不做 <code>roami cert</code>，不要求域名</b>（2026-09-25 拍板）：这和连通性一样是部署者自己能做的事。</p>
+<div class="grid2">
+  <div class="card acc"><h4>Roami 该做的（就这一件）</h4><p>启动日志和 设置 › 关于 里明说「证书是自签的，iPhone 收不到推送」，给 <code>/cert.crt</code> 链接和两条路的说明；改 <code>tls_san</code> 时自动重签（今天要手删旧证书）。</p></div>
+  <div class="card acc"><h4>配对 = 扫码</h4><p>桌面 设置 › 关于 生成二维码 <code>{url, pairToken}</code>，token 一次性 10 分钟。手机（已经连得上那个地址）扫码打开 → 换长期 token → 引导「加到主屏」→ 申请通知权限。不用输地址、不用记密码。</p></div>
+  <div class="card"><h4>多台机器</h4><p>PWA 里存多个部署（URL + token），「我 › 机器」切换；有 cluster hub 的部署一个 URL 管全部，推送由各机器自己发（hub 只是反代）。</p></div>
+  <div class="card"><h4>后端出网</h4><p>发推送要机器能访问 Apple / Google / Mozilla 的推送网关。内网机器可以让 hub 代发（sink 加一个 <code>via</code>）。</p></div>
+</div>
+
+<h2 id="s8">§8 工程：目录、Service Worker、TWA 打包</h2>
+<pre><code>frontend/
+  src/mobile/                 # 手机 IA：Inbox / Sessions / SessionScreen / Projects / Me（只在 data-app="mobile" 装配）
+  src/mobile/native.ts        # 通知权限 / 订阅 / 角标 / 震动 / 分享的薄封装，全是 Web API
+  public/sw.js                # 现有；加 push / notificationclick / 离线缓存
+  public/manifest.webmanifest # 加 shortcuts（收件箱 / 新会话）、share_target（分享文件给会话）
+backend/api/push.go           # /push/vapid · /push/subscribe · sink push.web（RFC 8291 加密 + VAPID）
+backend/api/inbox.go          # GET /inbox · POST /inbox/read
+backend/api/pair.go           # POST /pair/token · POST /pair/redeem
+backend/cmd/tls.go            # 只加：自签时启动日志提醒；tls_san 变更自动重签
+scripts/build/build-twa.sh    # bubblewrap init --manifest https://&lt;部署&gt;/manifest.webmanifest → apk（部署者自己跑）</code></pre>
+<table>
+  <tr><th>能力</th><th>Web API</th><th>iOS PWA</th><th>Android PWA / TWA</th></tr>
+  <tr><td>推送</td><td>PushManager + VAPID</td><td>16.4+，须加到主屏</td><td>✓</td></tr>
+  <tr><td>可操作通知</td><td>showNotification actions + notificationclick</td><td>✓（按钮在长按/下拉后）</td><td>✓</td></tr>
+  <tr><td>角标</td><td>setAppBadge</td><td>✓</td><td>✓</td></tr>
+  <tr><td>生命周期 / 重连</td><td>visibilitychange · pageshow</td><td>✓</td><td>✓</td></tr>
+  <tr><td>键盘</td><td>VirtualKeyboard API（已有 <code>--kb</code>）</td><td>用 visualViewport 推算（已有）</td><td>✓</td></tr>
+  <tr><td>触感 / 分享 / 保存图片</td><td>vibrate · Web Share · 长按系统菜单</td><td>vibrate 不可用，其余 ✓</td><td>✓</td></tr>
+  <tr><td>安全存储</td><td>无；token 存 IndexedDB，PWA 沙箱隔离</td><td>✓</td><td>✓</td></tr>
+  <tr><td>实时活动 / 常驻通知</td><td>—</td><td>✗（需苹果账号）</td><td>常驻通知可用 <code>silent</code> + <code>tag</code> 复用一条</td></tr>
+</table>
+<h3>分发</h3>
+<p>Roami 不发安装包。iOS：Safari 加到主屏。Android：Chrome 安装即可；想要商店里那种「App」的部署者用 <code>build-twa.sh</code>（Bubblewrap）对着自己的域名打 APK，可自用可上 Play。TWA 要求 <code>/.well-known/assetlinks.json</code> 与 APK 签名对上，脚本一并生成，后端静态托管这个文件。</p>
+
+<h2 id="s9">§9 契约：新接口与事件</h2>
+<table>
+  <tr><th>接口</th><th>入参</th><th>出参 / 说明</th></tr>
+  <tr><td><code>GET /inbox?since=</code></td><td>游标</td><td><code>{items:[{id,type,session,label,project,tail,options?,at,read}], badge}</code>；type 见 §6；<code>options</code> 只在 waiting 且能解析时给</td></tr>
+  <tr><td><code>POST /inbox/read</code></td><td><code>{ids|all}</code></td><td>已读；角标随之更新</td></tr>
+  <tr><td><code>POST /push/subscribe</code></td><td><code>{subscription, device, ua}</code>（PushSubscription 原样）</td><td>存到 <code>push_devices</code> 表；同 device 覆盖；网关回 410 即删</td></tr>
+  <tr><td><code>DELETE /push/subscribe</code></td><td><code>{device}</code></td><td>退订</td></tr>
+  <tr><td><code>GET /push/vapid</code></td><td>—</td><td>本部署的 VAPID 公钥；密钥对首次启动生成在 <code>~/.roami/push/</code></td></tr>
+  <tr><td><code>POST /pair/token</code></td><td>—（桌面已登录）</td><td><code>{token, url, expiresAt}</code>，二维码内容</td></tr>
+  <tr><td><code>POST /pair/redeem</code></td><td><code>{token, device}</code></td><td>长期 token（等价于登录 cookie，可在「我 › 设备」里吊销）</td></tr>
+  <tr><td><code>GET /.well-known/assetlinks.json</code></td><td>—</td><td>TWA 域名归属校验；<code>build-twa.sh</code> 生成后放 <code>~/.roami/twa/</code>，后端静态托管</td></tr>
+  <tr><td><code>GET /projects</code>（改）</td><td>—</td><td>去掉前端 <code>hasSider</code> 对 worktree 数据的 gate；后端不变</td></tr>
+  <tr><td>事件 <code>session.waiting / done / error</code></td><td>—</td><td>走现成 <code>notification.publish</code>，IM 插件的 <code>*</code> 通配自动收到——飞书也就顺手有了「会话等你」</td></tr>
+</table>
+
+<h2 id="s10">§10 分期与验收<small>四期约七周；全程不写原生代码，不依赖任何中心服务</small></h2>
+<div class="phases">
+  <div class="phase"><span class="n">M-A · 2 周</span><h4>通知与收件箱</h4><ul><li>事件总线三种 type + 去抖</li><li>Web Push：VAPID 生成、订阅、sw push 监听、可操作通知、角标</li><li><code>/inbox</code> + 手机收件箱页</li><li>130.55 先用手装 CA 验证整条链路（顺便验掉 iOS 对手装 CA 的推送放不放行），不等域名</li></ul><div class="out">验收：agent 要权限 → 锁屏收到 → 点允许 → tmux 里收到 Enter，全程不解锁（iPhone 与 Android 各一台）</div></div>
+  <div class="phase"><span class="n">M-B · 1 周</span><h4>接入与安装</h4><ul><li>扫码配对 → 加到主屏引导 → 通知权限，一条流程</li><li>自签证书时启动日志与关于页提醒 + <code>/cert.crt</code> 链接；<code>tls_san</code> 变更自动重签</li><li><code>build-twa.sh</code> + <code>assetlinks.json</code> 托管，文档写清三条入口</li></ul><div class="out">验收：新机器 install.sh 后，Android 直接收到推送；iPhone 按关于页提示装 CA 后收到</div></div>
+  <div class="phase"><span class="n">M-C · 3 周</span><h4>手机 IA 重做</h4><ul><li>四个一级页 + 会话页两面</li><li>会话列表取代树；权限卡 sticky</li><li>项目页：worktree → 文件 / 改动 / PR 只读</li><li>手势返回、后台重连、iPad 走桌面布局</li></ul><div class="out">验收：§3 的十一条逐条复测；真机过 web-ui-checklist</div></div>
+  <div class="phase"><span class="n">M-D · 1 周</span><h4>离线与进度通知</h4><ul><li>离线：sw 缓存最近 N 个会话的转录 + diff + 收件箱</li><li>Android：进度通知用 <code>tag</code> 复用一条、带「中断」动作</li></ul><div class="out">验收：断网打开能看昨晚的对话；通知栏一键中断</div></div>
+</div>
+<h3>五个验收场景</h3>
+<ol>
+  <li><b>床上救火</b>：手机锁屏收到「Claude 想运行 git push」，点允许，不解锁；30 秒后收到「做完了，PR #245 已建」。iPhone 与 Android 收的是同一份 Service Worker 发的通知。</li>
+  <li><b>地铁上派活</b>：收件箱空 → 会话 → + 新会话 → 选 blade-agent → 新开 worktree → Claude → 说一句「把周报生成的时区改成东八区」→ 锁屏。</li>
+  <li><b>看改动</b>：项目 → blade-agent → 周报生成 worktree → 改动 3 个文件 → 点开 diff → PR 卡显示 CI 跑着。</li>
+  <li><b>换机器</b>：我 › 机器 → 扫 247 的二维码 → 列表多一台 → 会话页按机器分段；两台各自发推送。</li>
+  <li><b>别人的部署</b>：同事在自己笔记本 install.sh，手机能连到那台机器（怎么连是他的事），扫码，Android 直接收到推送；iPhone 按提示装一次 CA——全程没碰 Roami 项目方的任何服务。</li>
+  <li><b>断网</b>：飞行模式打开 App，收件箱和最近三个会话的对话都在，顶部一条「离线」；联网后自动刷新。</li>
+</ol>
+
+<h2 id="s11">§11 风险</h2>
+<div class="grid2">
+  <div class="card bad"><h4>iPhone 要多一步</h4><p>iPhone 不认自签证书，收推送前要装一次 Roami 的 CA。对策：关于页把步骤和 <code>/cert.crt</code> 链接写清楚；<b>手装 CA 的 PWA 能否收推送尚未验证</b>，不通的话 iPhone 就得靠部署者自己配正式证书。</p></div>
+  <div class="card warn"><h4>国内安卓的推送网关</h4><p>Android Chrome 的 Web Push 经 Google 的网关（fcm.googleapis.com），国内部分网络不通、部分厂商 ROM 杀后台。对策：前台时走 WebSocket 直接收事件不依赖推送；文档提示把 Chrome 加白名单。iOS 走 Apple 网关，国内可达。</p></div>
+  <div class="card warn"><h4>抓屏判「等你」的误报</h4><p>TUI 重绘残帧会闪一下 waiting。3 秒去抖 + 已有的 <code>advancePromptSignal</code> 连续两次确认；误推一条比漏推一条便宜。</p></div>
+  <div class="card warn"><h4>iOS PWA 的限制</h4><p>推送必须加到主屏后才有；通知按钮藏在长按 / 下拉里；没有震动 API。对策：配对流程里把「加到主屏」做成必经一步，权限卡在 App 内也能批。</p></div>
+  <div class="card"><h4>电量</h4><p>后台不做轮询，全靠推送唤醒；前台轮询频率沿用桌面（1.2s 只对当前会话）。</p></div>
+  <div class="card"><h4>后端出网</h4><p>发推送要机器能访问 Apple / Google / Mozilla 的推送网关。内网机器可以让 hub 代发。</p></div>
+</div>
+
+<h2 id="s12">§12 待拍板</h2>
+<div class="decide"><b class="q">D1 · 已定：连通性不在范围内</b>手机通向自己部署 Roami 的地方是部署者自己的事（和桌面浏览器同一个前提）；Roami 只管证书那一件（2026-09-25 拍板）。</div>
+<div class="decide"><b class="q">D2 · session.done 默认推不推？</b>Lody 推。跑着五六个会话时一小时十几条。<span class="ans">建议默认推、设置里可关，且同一会话 10 分钟内合并成一条。</span></div>
+<div class="decide"><b class="q">D3 · 手机上要不要能编辑文件？</b>Lody 不能，说「即将支持」。<span class="ans">建议 M-C 不做，Monaco 在手机上体验差，改文件让 agent 改。</span></div>
+<div class="decide"><b class="q">D4 · iPad 走哪套？</b><span class="ans">建议走桌面 expanded 覆盖式布局</span>（今天 768 被当手机是 bug 不是设计），手机 IA 只给 compact。</div>
+<div class="decide"><b class="q">D5 · 已定：不做 <code>roami cert</code>，不要求域名</b>iPhone 用户自己装 CA 或自己配证书；Roami 只在启动日志和关于页提醒（2026-09-25 拍板）。</div>
+<div class="decide"><b class="q">D6 · 已定：不依赖中心服务，推送只走 Web Push；iOS 是 PWA，Android 是 PWA / TWA</b>Roami 是给所有人自托管的，且没有苹果开发者账号（2026-09-25 拍板）。</div>
+
+<p style="margin-top:48px;color:var(--text-dimmer);font-size:var(--fs-meta)">配套说明：<a href="../24-mobile-app.md">24-mobile-app.md</a>（现状审计的行号出处、与 13 / 22 / 23 稿的关系）。调研来源：LodyAI/Lody 仓库 site-docs、README；Roami 代码审计 2026-09-25。</p>
+</div>
+</body>
+</html>

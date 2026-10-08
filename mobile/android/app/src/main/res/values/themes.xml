@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- AppCompat 而不是 Material3：后者会按壁纸给窗口染色、把 Button 的 background 换成自己的实心色 -->
+    <style name="Theme.Roami" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:statusBarColor">#0d1117</item>
+        <item name="android:navigationBarColor">#0d1117</item>
+        <item name="android:windowBackground">@color/ic_launcher_background</item>
+        <item name="colorPrimary">#58a6ff</item>
+        <item name="colorAccent">#58a6ff</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>

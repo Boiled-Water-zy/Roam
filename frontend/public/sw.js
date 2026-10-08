@@ -4,6 +4,10 @@
 //  - 导航请求(index.html) 网络优先，断网时回退到缓存的外壳，避免部署后拿到旧页面。
 //  - 静态构建产物（带 hash 的 js/css/图标）缓存优先 + 后台更新（内容寻址、永不串版本）。
 const SHELL = 'roami-shell-v1'
+// 只读快照：收件箱 / 会话总览 / 项目 / 对话记录。网络优先，断网了给上一次的（24 稿 M-D：
+// 「断网打开能看昨晚的对话」）。终端 WS 和其它接口照旧不碰。
+const SNAP = 'roami-snap-v1'
+const SNAP_PATH = /\/api\/(?:inbox|sessions\/overview|projects|sessions\/[^/]+\/(?:transcript|codex-transcript))(?:$|\?)/
 
 self.addEventListener('install', () => {
   self.skipWaiting()
@@ -12,7 +16,7 @@ self.addEventListener('install', () => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys()
-    await Promise.all(keys.filter((k) => k !== SHELL).map((k) => caches.delete(k)))
+    await Promise.all(keys.filter((k) => k !== SHELL && k !== SNAP).map((k) => caches.delete(k)))
     await self.clients.claim()
   })())
 })
@@ -26,6 +30,7 @@ self.addEventListener('fetch', (event) => {
   // 文件字节（图片/视频/PDF/Office 预览）：先问页面能不能走直连。
   // 页面说不行、或者半天不答，就照常走网络——拦截只是给它一条快路，不是把路拦死。
   if (isFileBytes(url)) { event.respondWith(fileBytes(event)) ; return }
+  if (SNAP_PATH.test(url.pathname + url.search)) { event.respondWith(snapshot(req)); return }
   if (url.pathname.startsWith('/api')) return          // 其余实时接口/WS：直连网络
 
   // 导航（打开页面）：网络优先，失败回退缓存的外壳
@@ -56,6 +61,23 @@ self.addEventListener('fetch', (event) => {
     })())
   }
 })
+
+// 网络优先；成功就存一份（只存 200，401 之类不存，不然登出后还能看到旧数据），
+// 失败给缓存并打上 X-Roami-Offline 头，页面据此提示「离线，显示的是上次的」
+async function snapshot(req) {
+  const cache = await caches.open(SNAP)
+  try {
+    const net = await fetch(req)
+    if (net.ok) cache.put(req, net.clone())
+    return net
+  } catch (e) {
+    const cached = await cache.match(req)
+    if (!cached) throw e
+    const h = new Headers(cached.headers)
+    h.set('X-Roami-Offline', '1')
+    return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers: h })
+  }
+}
 
 // ── 文件字节走直连（P2P）─────────────────────────────────────────────────
 //
@@ -120,3 +142,53 @@ async function fileBytes(event) {
     return fetch(req)
   }
 }
+
+// ── Web Push（24 稿 §6）─────────────────────────────────────────────────────
+// 后端 push.go 发来的 JSON：{id,type,session,label,title,body,actions,badge}。
+// 通知按钮（允许 / 拒绝）在这儿直接打 /api/sessions/:name/keys，不开页面、不解锁；
+// 点通知本体 → 打开 #/inbox/<session>，页面接到后直接开那个会话。
+self.addEventListener('push', (event) => {
+  let p = {}
+  try { p = event.data ? event.data.json() : {} } catch { p = { title: 'Roami', body: event.data && event.data.text() } }
+  const actions = (p.actions || []).map((a) => (a === 'allow' ? { action: 'allow', title: '允许' } : a === 'deny' ? { action: 'deny', title: '拒绝' } : null)).filter(Boolean)
+  event.waitUntil((async () => {
+    await self.registration.showNotification(p.title || p.label || 'Roami', {
+      body: p.body || '',
+      tag: p.session ? 'session:' + p.session : 'roami:' + (p.id || Date.now()), // 同一会话的新通知顶掉旧的
+      renotify: true,
+      icon: '/logo-mark-192.png',
+      badge: '/logo-mark-192.png',
+      data: { session: p.session || '', type: p.type || '', id: p.id || 0 },
+      actions,
+    })
+    try { if (typeof p.badge === 'number') { if (p.badge > 0) await self.navigator.setAppBadge(p.badge); else await self.navigator.clearAppBadge() } } catch {}
+  })())
+})
+
+self.addEventListener('notificationclick', (event) => {
+  const n = event.notification
+  const d = n.data || {}
+  n.close()
+  event.waitUntil((async () => {
+    if ((event.action === 'allow' || event.action === 'deny') && d.session) {
+      // 允许 = Enter（选中项就是 Yes / 1）；拒绝 = Escape。白名单在后端，这里只发这两个
+      const keys = event.action === 'allow' ? ['Enter'] : ['Escape']
+      try {
+        const r = await fetch('/api/sessions/' + encodeURIComponent(d.session) + '/keys', {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }),
+        })
+        if (r.ok) {
+          await self.registration.showNotification(n.title, { body: event.action === 'allow' ? '已允许' : '已拒绝', tag: n.tag, icon: '/logo-mark-192.png', silent: true })
+          return
+        }
+      } catch {}
+      // 发不出去（没登录 / 后端不通）：退回打开页面
+    }
+    const url = '/#/inbox' + (d.session ? '/' + encodeURIComponent(d.session) : '')
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const c of all) {
+      if ('focus' in c) { try { await c.navigate(url) } catch {} ; return c.focus() }
+    }
+    return self.clients.openWindow(url)
+  })())
+})

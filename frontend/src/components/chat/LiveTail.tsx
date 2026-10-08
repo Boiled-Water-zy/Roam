@@ -16,7 +16,7 @@ import { MONO } from './blocks'
 const LEAD_BOX = /^[\s│┃|╎┆┊╭╰├╞┝└┗╘╙⎿─━═>❯⏵]+/u
 const TAIL_BOX = /[\s│┃|╎┆┊╮╯┤╡┥─━═]+$/u
 const BOX_ONLY = /^[\s─━═│┃╭╮╰╯├┤┬┴┼╞╡╪.·]*$/u
-const NOISE = /(esc to interrupt|esc to cancel|enter to select|tab\/arrow|to navigate|\? for shortcuts|ctrl\+|shift\+tab|bypass permissions|↑↓|tokens?\b|⧉|auto-?accept|for newline)/i
+const NOISE = /(^background\)$|(auto|plan) mode on|accept edits on|for agen|esc to interrupt|esc to cancel|enter to select|tab\/arrow|to navigate|\? for shortcuts|ctrl\+|shift\+tab|bypass permissions|↑↓|tokens?\b|⧉|auto-?accept|for newline)/i
 const SPINNER = /^[\s]*[●○◯⏺✶✳✻∗*•·✢✦✧✺✷+✽][\s]*$/u
 
 // 下面这些字符是**解析** TUI 输出用的，不是拿来显示的——显示一律换成 SVG。
@@ -35,9 +35,13 @@ export type TailLine =
 export function parseTail(raw: string, opts: { session?: string; lastUser?: string } = {}): TailLine[] {
   const skip = new Set([opts.session, (opts.lastUser || '').trim()].filter(Boolean) as string[])
   const out: TailLine[] = []
+  let inTip = false // 「Tip: …」会折成两三行，整段都是 TUI 的闲话，到空行为止一起跳过
   for (let l of String(raw).replace(/\r/g, '').split('\n')) {
+    if (!l.trim()) inTip = false
+    if (inTip) continue
     l = l.replace(LEAD_BOX, '').replace(TAIL_BOX, '').replace(/^[●○◯⏺✶✳✻∗•·]\s?/u, '')
     const v = l.trim()
+    if (/^Tip:/i.test(v)) { inTip = true; continue }
     if (!v || BOX_ONLY.test(l) || SPINNER.test(l) || NOISE.test(l)) continue
     // 用户刚发的那句、会话名——TUI 会把它们回显在框里，重复一遍没有意义
     if (skip.has(v)) continue

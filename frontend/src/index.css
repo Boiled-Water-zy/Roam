@@ -1323,22 +1323,9 @@ html[data-pointer="coarse"] .tt-srow .acts { opacity: 1; }
 .tt-sessdock .ttl, .tt-sessdock-sheet .ttl { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
 .tt-sessdock .ttl .pj, .ttl .pj { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; color: var(--text-dimmer); }
 .tt-sessdock .ttl .nm, .ttl .nm { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.tt-sessdock .wait { flex: 0 0 auto; color: #e3b341; font-size: 11.5px; }
+.tt-sessdock .wait { flex: 0 0 auto; margin-left: auto; padding: 4px 10px; border: 1px solid var(--warn-border); border-radius: var(--r-pill); background: var(--warn-soft); color: var(--warn); font: inherit; font-size: var(--fs-meta); font-weight: 600; line-height: 1.2; cursor: pointer; }
+.tt-sessdock .wait ~ .up { margin-left: 0; }
 .tt-sessdock .up { flex: 0 0 auto; margin-left: auto; color: var(--text-dimmer); }
-.tt-sessdock .cnt {
-  position: relative;
-  flex: 0 0 auto; min-width: 30px; height: 30px; padding: 0 8px;
-  display: grid; place-items: center; border: 1px solid var(--border); border-radius: 15px;
-  background: var(--bg-base); color: var(--text-dim); font: 600 12px/1 ui-monospace, monospace;
-  cursor: pointer;
-}
-/* 徽标视觉只有 30，但它是坞上唯一一个「点了不展开会话、而是出切换 sheet」的目标——
-   命中区必须撑到 44，否则手指偏一点就变成展开会话，做的是完全不同的另一件事。
-   真机实测这里原本只有 30（web-ui-checklist 的 44 断言就是为这种情况写的）。 */
-.tt-sessdock .cnt::after {
-  content: ""; position: absolute; left: 50%; top: 50%;
-  width: max(44px, 100%); height: 44px; transform: translate(-50%, -50%);
-}
 .tt-sessdock-x {
   width: 32px; height: 32px; display: grid; place-items: center;
   border: 0; border-radius: 8px; background: transparent; color: var(--text-dimmer);
@@ -3784,3 +3771,180 @@ html[data-pointer="coarse"] .tt-ka-rules .tt-act.xs { height: 30px; width: 34px;
 .tt-ka-card .m .long { color: var(--warn); }
 .tt-ka-card .m .sep { color: var(--text-dimmer); }
 .tt-ka-card .ops { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── 收件箱（24 稿 §5）：三段时间线，一行 = 图标 · 会话名 + 摘要 · 时间 ───────── */
+.tt-inbox { padding: var(--pad-page, 16px); max-width: 760px; }
+.tt-inbox-sec { margin-top: var(--sp-4); }
+.tt-inbox-sec h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-meta); color: var(--text-dimmer); font-weight: 600; letter-spacing: .04em; }
+.tt-inbox-sec h3 span { color: var(--text-dimmer); font-weight: 400; margin-left: 4px; }
+.tt-inbox-row {
+  display: flex; align-items: center; gap: var(--sp-3); width: 100%; text-align: left;
+  padding: 10px 12px; margin-bottom: 6px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm);
+  background: var(--bg-container); color: inherit; font: inherit; cursor: pointer; min-height: 44px;
+}
+:where(html[data-pointer="fine"]) .tt-inbox-row:hover { background: var(--list-hover); }
+.tt-inbox-row .ic { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font-size: var(--fs-meta); font-weight: 700; color: #fff; background: var(--text-dimmer); }
+.tt-inbox-row.waiting .ic { background: var(--warn); }
+.tt-inbox-row.done .ic { background: var(--ok-solid); }
+.tt-inbox-row.error .ic { background: var(--danger); }
+.tt-inbox-row.waiting.unread { border-color: var(--warn-border); background: var(--warn-soft); }
+.tt-inbox-row .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tt-inbox-row .t b { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-inbox-row .t span { font-size: var(--fs-meta); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-inbox-row.unread .t b { color: var(--text-bright); }
+.tt-inbox-row em { flex: 0 0 auto; font-style: normal; color: var(--text-dimmer); font: 400 var(--fs-micro)/1 var(--mono); }
+
+/* ── 手机「会话」页（24 稿 §5）：按项目分组，顶上钉「需要你」 ───────────────── */
+.tt-msess { padding: var(--pad-page, 12px); padding-bottom: var(--sp-5); }
+.tt-msess-head { display: flex; gap: var(--sp-2); align-items: center; margin-bottom: var(--sp-3); }
+.tt-msess-head .ant-input-affix-wrapper { flex: 1; min-width: 0; }
+.tt-msess-sec { margin-top: var(--sp-4); }
+.tt-msess-sec h3 { margin: 0 4px var(--sp-2); font-size: var(--fs-meta); color: var(--text-dimmer); font-weight: 600; letter-spacing: .04em; }
+.tt-msess-sec h3 span { font-weight: 400; margin-left: 4px; }
+.tt-msess-sec.hot h3 { color: var(--warn); }
+.tt-msess-proj { display: flex; align-items: center; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; min-height: 32px; }
+.tt-msess-proj h3 { flex: 1; min-width: 0; text-align: left; margin-bottom: 0; }
+.tt-msess-proj > svg { color: var(--text-dimmer); margin-right: 8px; }
+.tt-msess-proj + .tt-msess-row { margin-top: var(--sp-2); }
+.tt-msess-task { border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-container); margin-bottom: 8px; padding: 6px 0 2px; }
+.tt-msess-task .tn { padding: 2px 12px 6px; font-size: var(--fs-meta); color: var(--text-dim); font-weight: 600; }
+.tt-msess-row {
+  display: flex; align-items: center; gap: var(--sp-3); width: 100%; text-align: left;
+  padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm);
+  background: var(--bg-container); color: inherit; font: inherit; cursor: pointer; min-height: 52px;
+}
+.tt-msess-row.sub { border: 0; border-radius: 0; margin: 0; background: transparent; padding-left: 20px; min-height: 46px; }
+.tt-msess-row.wait { border-color: var(--warn-border); background: var(--warn-soft); }
+.tt-msess-row.sub.wait { background: var(--warn-soft); }
+.tt-msess-row .ic { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--bg-elevated); }
+.tt-msess-row .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tt-msess-row .t b { font-size: var(--fs-body); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-msess-row .t span { font-size: var(--fs-meta); color: var(--text-dim); }
+.tt-msess-row.wait .t span { color: var(--warn); }
+.tt-msess-row.dormant .t b { color: var(--text-dim); font-weight: 500; }
+.tt-msess-row em { flex: 0 0 auto; font-style: normal; color: var(--text-dimmer); font: 400 var(--fs-micro)/1 var(--mono); }
+.tt-msess-empty { color: var(--text-dimmer); text-align: center; padding: var(--sp-5) 0; }
+/* 「我」页 */
+.tt-mme { padding: var(--sp-2) 0 var(--sp-5); }
+.tt-mme-push { display: flex; align-items: center; gap: var(--sp-3); padding: 10px 16px; }
+.tt-mme-push > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tt-mme-push b { font-size: var(--fs-body); font-weight: 500; }
+.tt-mme-push span { font-size: var(--fs-meta); color: var(--text-dim); }
+/* 会话行的状态行 / 分支 */
+.tt-msess-row .t .st { display: flex; gap: 4px; min-width: 0; font-size: var(--fs-meta); color: var(--text-dim); }
+.tt-msess-row .t .st i { font-style: normal; flex: 0 0 auto; }
+.tt-msess-row .t .st .tail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dimmer); }
+.tt-msess-row.wait .t .st i { color: var(--warn); }
+.tt-msess-row .t .br { display: inline-flex; align-items: center; gap: 4px; font: 400 var(--fs-micro)/1.4 var(--mono); color: var(--text-dimmer); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 手机「项目」页 */
+.tt-mproj { padding: var(--pad-page, 12px); padding-bottom: var(--sp-5); }
+.tt-mproj-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.tt-mproj-head b { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-lg); }
+.tt-mproj-wt { border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-container); margin-bottom: 10px; padding: 8px 0 8px; }
+.tt-mproj-wt .wn { display: flex; align-items: center; gap: 6px; padding: 2px 12px 6px; min-width: 0; }
+.tt-mproj-wt .wn b { font-size: var(--fs-body); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-mproj-wt .wn span { margin-left: auto; flex: 0 0 auto; font-size: var(--fs-micro); color: var(--text-dimmer); }
+.tt-mproj-wt .acts { display: flex; gap: 8px; padding: 6px 12px 0; flex-wrap: wrap; }
+
+/* 「装到手机」页 */
+.tt-install { padding: var(--pad-page, 12px); padding-bottom: var(--sp-5); max-width: 720px; }
+.tt-install-qr { display: flex; gap: var(--sp-4); align-items: center; padding: var(--sp-4); margin-bottom: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--bg-container); }
+.tt-install-qr .txt { flex: 1; min-width: 0; }
+.tt-install-qr .txt b { display: block; font-size: var(--fs-lg); margin-bottom: 4px; }
+.tt-install-qr .txt p { margin: 0 0 6px; color: var(--text-dim); }
+.tt-install-qr .txt p.dim { color: var(--text-dimmer); font-size: var(--fs-meta); }
+.tt-install-step { border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--bg-container); padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-3); }
+.tt-install-step.done { border-color: var(--ok-border); }
+.tt-install-step .hd { display: flex; align-items: center; gap: var(--sp-2); }
+.tt-install-step .hd .ic { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--bg-elevated); color: var(--text-dim); }
+.tt-install-step.done .hd .ic { background: var(--ok-soft); color: var(--ok); }
+.tt-install-step .hd b { flex: 1; min-width: 0; font-size: var(--fs-body); }
+.tt-install-step .hd .ok { display: inline-flex; align-items: center; gap: 4px; color: var(--ok); font-size: var(--fs-meta); }
+.tt-install-step .bd { margin-top: var(--sp-2); color: var(--text-dim); font-size: var(--fs-sm); }
+.tt-install-step .bd p { margin: 0 0 var(--sp-2); }
+.tt-install-step .bd ol { margin: 0 0 var(--sp-2); padding-left: 20px; line-height: 1.8; }
+.tt-offline { padding: 4px 12px; text-align: center; font-size: var(--fs-meta); color: var(--warn); background: var(--warn-soft); border-bottom: 1px solid var(--warn-border); }
+/* 会话页里的蜂群卡 */
+.tt-msess-task.swarm .tn { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 12px; border: 0; background: none; color: var(--text-bright); font: inherit; cursor: pointer; min-height: 40px; text-align: left; }
+.tt-msess-task.swarm .tn b { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-msess-task.swarm .tn span { color: var(--text-dimmer); font-size: var(--fs-meta); }
+.tt-msess-task.swarm .tn .pend { font-style: normal; color: var(--warn); font-size: var(--fs-meta); }
+.tt-msess-task.swarm .tn > svg:last-child { color: var(--text-dimmer); }
+.tt-install-step.app { border-color: var(--accent-border); background: var(--accent-soft); }
+.tt-install-step.app .hd .ic { background: var(--accent-soft); color: var(--accent); }
+.tt-mproj-more { display: block; width: 100%; min-height: 44px; margin-bottom: var(--sp-3); border: 1px dashed var(--border-subtle); border-radius: var(--r-sm); background: none; color: var(--text-dim); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.tt-bottomnav-btn .ic { position: relative; display: inline-flex; }
+.tt-bottomnav-btn .ic .bd { position: absolute; top: -6px; left: 14px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-pill); background: var(--warn); color: var(--bg-base); font: 700 var(--fs-micro)/16px var(--mono); font-style: normal; text-align: center; }
+/* 手机上弹窗里只要有一个撑宽的输入框，外层就能横向滚，聚焦时整张弹窗被滚到屏幕左边去 */
+html[data-size="compact"] .ant-modal-wrap { overflow-x: hidden; }
+html[data-size="compact"] .ant-modal { max-width: calc(100vw - 24px); margin-inline: auto; }
+/* 手机首页 */
+.tt-mhome { padding: var(--pad-page, 12px); padding-bottom: var(--sp-5); }
+.tt-mhome header { margin-bottom: var(--sp-4); }
+.tt-mhome header .top { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+.tt-mhome header small { font-size: var(--fs-micro); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-dimmer); }
+.tt-mhome header h1 { margin: 0; font-size: var(--fs-title); line-height: 1.25; letter-spacing: -.02em; color: var(--text-bright); }
+.tt-mhome .bell { position: relative; width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--text-dim); cursor: pointer; }
+.tt-mhome .bell i { position: absolute; top: 4px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-pill); background: var(--accent-solid); color: var(--bg-base); font: 700 var(--fs-micro)/16px var(--mono); font-style: normal; text-align: center; }
+.tt-mhome .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.tt-mhome .tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 72px; padding: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--bg-container); color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.tt-mhome .tile b { font-size: var(--fs-title); line-height: 1.1; font-weight: 600; color: var(--text-bright); font-variant-numeric: tabular-nums; }
+.tt-mhome .tile span { font-size: var(--fs-meta); color: var(--text-dim); }
+.tt-mhome .tile.warn { border-color: var(--warn-border); background: var(--warn-soft); }
+.tt-mhome .tile.warn span { color: var(--warn); }
+.tt-mhome .tile.ok { border-color: var(--ok-border); }
+.tt-mhome .tile.ok span { color: var(--ok); }
+.tt-mhome .sec { margin-bottom: var(--sp-4); }
+.tt-mhome .sec h3 { display: flex; align-items: center; gap: 6px; margin: 0 4px var(--sp-2); font-size: var(--fs-meta); font-weight: 600; letter-spacing: .04em; color: var(--text-dimmer); }
+.tt-mhome .sec h3 span { font-weight: 400; }
+.tt-mhome .sec h3 button { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; min-height: 32px; border: 0; background: none; color: var(--text-dim); font: inherit; cursor: pointer; }
+.tt-mhome .need { margin-bottom: var(--sp-2); border: 1px solid var(--warn-border); border-radius: var(--r-card); background: var(--warn-soft); }
+.tt-mhome .need .body { display: flex; gap: var(--sp-3); width: 100%; padding: var(--sp-3); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tt-mhome .need .ic { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--bg-elevated); }
+.tt-mhome .need .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tt-mhome .need .t b { font-size: var(--fs-body); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-mhome .need .t small { font-size: var(--fs-micro); color: var(--text-dimmer); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-mhome .need .t p { margin: 6px 0 0; font-size: var(--fs-sm); color: var(--text-bright); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tt-mhome .need .acts { display: flex; gap: var(--sp-2); padding: 0 var(--sp-3) var(--sp-3); }
+.tt-mhome .need .acts .tt-act { min-height: 40px; padding: 0 14px; }
+.tt-mhome .need .acts .tt-act:last-child { margin-left: auto; }
+.tt-mhome .none { padding: var(--sp-3); border: 1px dashed var(--border-subtle); border-radius: var(--r-sm); color: var(--text-dimmer); font-size: var(--fs-sm); text-align: center; }
+.tt-mhome .tt-msess-row.err .ic { color: var(--danger); }
+.tt-mhome .host { display: grid; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--bg-container); }
+.tt-mhome .meter .ml { display: flex; justify-content: space-between; gap: var(--sp-2); margin-bottom: 6px; font-size: var(--fs-meta); }
+.tt-mhome .meter .ml span { color: var(--text-bright); }
+.tt-mhome .meter .ml em { font-style: normal; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.tt-mhome .meter .bar { height: 6px; border-radius: var(--r-pill); background: var(--bg-elevated); overflow: hidden; }
+.tt-mhome .meter .bar i { display: block; height: 100%; border-radius: var(--r-pill); background: var(--accent-solid); }
+.tt-mhome .meter .bar i.warn { background: var(--warn); }
+.tt-mhome .meter .bar i.danger { background: var(--danger); }
+.tt-mhome .quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-2); }
+.tt-mhome .quick button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 72px; border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--bg-container); color: var(--text-dim); font: inherit; font-size: var(--fs-meta); cursor: pointer; }
+.tt-mhome .resume { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 56px; margin-bottom: var(--sp-4); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--accent-border); border-radius: var(--r-card); background: var(--accent-soft); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tt-mhome .resume .ic { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--bg-elevated); }
+.tt-mhome .resume .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tt-mhome .resume small { font-size: var(--fs-micro); color: var(--accent); letter-spacing: .06em; }
+.tt-mhome .resume b { font-size: var(--fs-body); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-mhome .resume > svg { color: var(--text-dimmer); }
+.tt-mhome .need.finish { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 56px; padding: var(--sp-2) var(--sp-3); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tt-mhome .need.finish .t small { font-family: inherit; }
+.tt-mhome .need.finish .go { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-meta); color: var(--warn); }
+.tt-mhome .projs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+.tt-mhome .projs button { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-height: 72px; padding: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-card); background: var(--bg-container); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tt-mhome .projs .av { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: var(--fs-sm); }
+.tt-mhome .projs .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tt-mhome .projs .t b { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-mhome .projs .t small { font-size: var(--fs-micro); color: var(--text-dimmer); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-mhome .projs .cnt { flex: 1 0 100%; display: flex; gap: var(--sp-2); font-size: var(--fs-micro); min-height: 14px; }
+.tt-mhome .projs .cnt i { font-style: normal; color: var(--text-dim); }
+.tt-mhome .projs .cnt i.w { color: var(--warn); }
+.tt-mhome .projs .cnt i.r { color: var(--ok); }
+.tt-msess-pills { display: flex; gap: var(--sp-2); margin: var(--sp-3) 0 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.tt-msess-pills .tt-pill { flex: 0 0 auto; min-height: 36px; }
+.tt-msess-pills .tt-pill span { margin-left: 6px; color: var(--text-dimmer); font-variant-numeric: tabular-nums; }
+.tt-appupdate { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--accent-border); border-radius: var(--r-card); background: var(--accent-soft); color: inherit; text-decoration: none; }
+.tt-appupdate b { font-size: var(--fs-body); color: var(--accent); }
+.tt-appupdate span { font-size: var(--fs-meta); color: var(--text-dim); }
+.tt-appupdate code { overflow-wrap: anywhere; font-size: var(--fs-meta); }
+button.tt-appupdate { width: 100%; text-align: left; font: inherit; cursor: pointer; }
+.tt-appupdate .action { color: var(--accent); }

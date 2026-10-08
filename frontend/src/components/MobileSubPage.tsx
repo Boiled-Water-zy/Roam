@@ -11,9 +11,10 @@
 //   ③ **接管返回键**：安卓物理返回应该收掉这一层，而不是把整个路由退掉。
 // 层级：--z-subpage(90) 盖过底栏(50)；从会话全屏(100)里唤起时传 layer="session"
 // 换成 --z-session-sub(110)，否则 portal 之后不再嵌套在会话那个层叠上下文里，会被盖住。
-import { type ReactNode } from 'react'
+import { type ReactNode, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useI18n } from '../i18n'
+import { useEdgeSwipe } from './shell/edge-swipe'
 import { useBackDismiss } from './shell/useBackDismiss'
 
 export default function MobileSubPage({ title, onBack, layer = 'page', children }: {
@@ -25,9 +26,11 @@ export default function MobileSubPage({ title, onBack, layer = 'page', children 
 }) {
   const { t } = useI18n()
   useBackDismiss(true, onBack)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEdgeSwipe(rootRef, { onBack })
 
   const node = (
-    <div style={{
+    <div ref={rootRef} style={{
       position: 'fixed', inset: 0, background: 'var(--bg-base)',
       zIndex: `var(${layer === 'session' ? '--z-session-sub' : '--z-subpage'})` as unknown as number,
       display: 'flex', flexDirection: 'column',

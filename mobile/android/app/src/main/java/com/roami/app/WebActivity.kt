@@ -1,0 +1,163 @@
+package com.roami.app
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.net.Uri
+import android.os.Environment
+import android.webkit.URLUtil
+import android.webkit.ValueCallback
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.http.SslError
+import android.os.Build
+import android.os.Bundle
+import android.view.View
+import android.webkit.CookieManager
+import android.webkit.PermissionRequest
+import android.webkit.SslErrorHandler
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import java.security.cert.X509Certificate
+
+/** 就是 Roami 网页本身。App 只多三样：自签证书首次询问、摇一摇回环境页、拉起通知服务。 */
+class WebActivity : AppCompatActivity() {
+    private lateinit var web: WebView
+    private lateinit var base: String
+    private lateinit var shake: ShakeDetector
+    private var askingSsl = false
+
+    // 网页里的 <input type=file>（上传文件到工作目录、贴图）：WebView 默认什么都不做，得自己接系统选择器
+    private var fileCb: ValueCallback<Array<Uri>>? = null
+    private val pickFiles = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val cb = fileCb ?: return@registerForActivityResult
+        fileCb = null
+        val data = res.data
+        val uris = mutableListOf<Uri>()
+        if (res.resultCode == RESULT_OK && data != null) {
+            data.clipData?.let { c -> for (i in 0 until c.itemCount) uris += c.getItemAt(i).uri }
+            if (uris.isEmpty()) data.data?.let { uris += it }
+        }
+        cb.onReceiveValue(if (uris.isEmpty()) null else uris.toTypedArray())
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        base = intent.getStringExtra("url") ?: Prefs(this).current ?: run { finish(); return }
+        web = WebView(this)
+        setContentView(web)
+        web.setBackgroundColor(0xFF0D1117.toInt())
+        web.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            mediaPlaybackRequiresUserGesture = false
+            val ver = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "0"
+            userAgentString = "$userAgentString RoamiApp/$ver"
+            mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        }
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
+        web.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, req: WebResourceRequest): Boolean {
+                // 站内照常；外链交给系统浏览器
+                val u = req.url.toString()
+                return if (u.startsWith(base)) false else { runCatching { startActivity(Intent(Intent.ACTION_VIEW, req.url)) }; true }
+            }
+            override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                val cert = error.certificate?.x509Certificate
+                val host = runCatching { java.net.URI(base).host }.getOrNull() ?: ""
+                if (cert == null || host.isEmpty()) { handler.cancel(); return }
+                val fp = Tls.fingerprint(cert)
+                val prefs = Prefs(this@WebActivity)
+                if (prefs.trusted(host) == fp) { handler.proceed(); return }
+                if (askingSsl) { handler.cancel(); return }
+                askingSsl = true
+                AlertDialog.Builder(this@WebActivity)
+                    .setTitle(R.string.ssl_title)
+                    .setMessage(getString(R.string.ssl_body, host, fp))
+                    .setPositiveButton(R.string.ssl_trust) { _, _ -> prefs.trust(host, fp); askingSsl = false; handler.proceed(); startEvents() }
+                    .setNegativeButton(R.string.ssl_cancel) { _, _ -> askingSsl = false; handler.cancel(); finish() }
+                    .setCancelable(false).show()
+            }
+        }
+        web.webChromeClient = object : WebChromeClient() {
+            // 语音输入要麦克风：页面请求时直接给（应用级权限在下面另外要）
+            override fun onPermissionRequest(request: PermissionRequest) { request.grant(request.resources) }
+            override fun onShowFileChooser(view: WebView, cb: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                fileCb?.onReceiveValue(null) // 上一次没收尾的先还掉，不然页面那个 input 永远卡住
+                fileCb = cb
+                val i = Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                    .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+                val types = params.acceptTypes.filter { it.isNotBlank() }
+                if (types.size == 1) i.type = types[0] else if (types.size > 1) i.putExtra(Intent.EXTRA_MIME_TYPES, types.toTypedArray())
+                return try { pickFiles.launch(Intent.createChooser(i, null)); true } catch (_: Exception) { fileCb = null; false }
+            }
+        }
+        // 下载（文件页的下载、证书、apk）：交给系统下载管理器，带上登录 Cookie
+        web.setDownloadListener { url, ua, disposition, mime, _ ->
+            runCatching {
+                val name = URLUtil.guessFileName(url, disposition, mime)
+                val req = DownloadManager.Request(Uri.parse(url))
+                    .addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url) ?: "")
+                    .addRequestHeader("User-Agent", ua)
+                    .setMimeType(mime).setTitle(name)
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+                (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+                Toast.makeText(this, name, Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                // 自签证书下系统下载器会拒绝连接：退给浏览器去下
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            }
+        }
+        val path = intent.getStringExtra("path") ?: ""
+        web.loadUrl(base + path)
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // 先让页面自己退（它的二级页 / 全屏会话都靠 history），退不动了才退 App
+                if (web.canGoBack()) web.goBack() else { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
+            }
+        })
+        shake = ShakeDetector(this) {
+            startActivity(Intent(this, PickActivity::class.java).putExtra("noauto", true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        }
+        askPermissions()
+        startEvents()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // 点通知进来：直接跳到那个会话
+        intent.getStringExtra("path")?.let { web.loadUrl(base + it) }
+    }
+
+    private fun askPermissions() {
+        val want = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= 33) want += Manifest.permission.POST_NOTIFICATIONS
+        val missing = want.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isNotEmpty()) ActivityCompat.requestPermissions(this, missing.toTypedArray(), 1)
+    }
+
+    private fun startEvents() {
+        val i = Intent(this, EventService::class.java).putExtra("base", base)
+        if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
+    }
+
+    override fun onResume() { super.onResume(); shake.start(); web.onResume() }
+    override fun onPause() { super.onPause(); shake.stop(); web.onPause() }
+    override fun onDestroy() { super.onDestroy(); web.destroy() }
+}

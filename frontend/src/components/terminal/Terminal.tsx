@@ -136,7 +136,14 @@ function minContrast(): number {
 // 只滤显示流：应用自身仍以为鼠标开着，后端合成的滚轮(sendScroll)不受影响。
 // 字节级处理，不解码，避免拆断跨帧的多字节 UTF-8。
 const MOUSE_ON = new Set(['1000', '1001', '1002', '1003'])
-function stripMouseEnableBytes(buf: Uint8Array): Uint8Array {
+// 应用的鼠标模式，从显示流里顺手记下来：开了就把滚轮直接变成鼠标序列写进输入流（同 xterm.js），
+// 不再绕后端起 tmux 进程——那条路一忙就一卡一卡
+type MouseMode = { on: boolean; sgr: boolean }
+function noteMouseMode(mode: MouseMode, num: string, on: boolean) {
+  if (MOUSE_ON.has(num)) mode.on = on
+  else if (num === '1006') mode.sgr = on
+}
+function stripMouseEnableBytes(buf: Uint8Array, mode: MouseMode): Uint8Array {
   let hit = false
   for (let i = 0; i + 3 < buf.length; i++) {
     if (buf[i] === 0x1b && buf[i + 1] === 0x5b && buf[i + 2] === 0x3f) { hit = true; break }
@@ -147,13 +154,15 @@ function stripMouseEnableBytes(buf: Uint8Array): Uint8Array {
     if (buf[i] === 0x1b && buf[i + 1] === 0x5b && buf[i + 2] === 0x3f) {
       let j = i + 3, num = ''
       while (j < buf.length && buf[j] >= 0x30 && buf[j] <= 0x39) { num += String.fromCharCode(buf[j]); j++ }
+      if (j < buf.length && (buf[j] === 0x68 || buf[j] === 0x6c)) noteMouseMode(mode, num, buf[j] === 0x68)
       if (j < buf.length && buf[j] === 0x68 /* 'h' */ && MOUSE_ON.has(num)) { i = j; continue } // 跳过整段
     }
     out.push(buf[i])
   }
   return new Uint8Array(out)
 }
-const stripMouseEnableStr = (s: string) => s.replace(/\x1b\[\?(?:1000|1001|1002|1003)h/g, '')
+const stripMouseEnableStr = (s: string, mode: MouseMode) => s
+  .replace(/\x1b\[\?(1000|1001|1002|1003|1006)([hl])/g, (m, num, hl) => { noteMouseMode(mode, num, hl === 'h'); return MOUSE_ON.has(num) && hl === 'h' ? '' : m })
 
 // 终端单元格坐标（0 基，含端点）
 type Cell = { col: number; row: number }
@@ -310,6 +319,21 @@ const Term = forwardRef<TermHandle, {
   const sendScroll = (dir: string, lines: number) => {
     const ws = wsRef.current
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'scroll', dir, lines }))
+  }
+  // 应用的鼠标模式（从显示流里记的），全屏 TUI 的滚轮走这条：直接写鼠标序列
+  const mouseMode = useRef<MouseMode>({ on: false, sgr: false })
+  // 一行手指位移 = 一格滚轮，和 kitty（touch_scroll_multiplier 1.0）/ xterm.js 一致。
+  // 实测 Claude Code 每格正好滚 1 行（之前「1.7 行」量的是 tmux copy-mode 那条老路）。
+  const WHEEL_LINES_PER_NOTCH = 1
+  const sendWheelReports = (dir: 'up' | 'down', notches: number, at?: Cell | null) => {
+    const ws = wsRef.current, t = termRef.current
+    if (!ws || ws.readyState !== 1 || !t) return
+    const btn = dir === 'up' ? 64 : 65
+    const col = (at?.col ?? Math.floor(t.cols / 2)) + 1, row = (at?.row ?? Math.floor(t.rows / 2)) + 1
+    const seq = mouseMode.current.sgr
+      ? `\x1b[<${btn};${col};${row}M`
+      : `\x1b[M${String.fromCharCode(32 + btn)}${String.fromCharCode(32 + Math.min(col, 223))}${String.fromCharCode(32 + Math.min(row, 223))}`
+    ws.send(seq.repeat(Math.min(notches, 60)))
   }
 
   // 单元格像素尺寸：优先取 xterm 渲染器的真实值（私有 API，升级失效则回退按容器等分——
@@ -527,8 +551,8 @@ const Term = forwardRef<TermHandle, {
       acknowledgeConnection()
       hasServerFrame.current = true
       const data = typeof e.data === 'string'
-        ? stripMouseEnableStr(e.data)
-        : stripMouseEnableBytes(new Uint8Array(e.data as ArrayBuffer))
+        ? stripMouseEnableStr(e.data, mouseMode.current)
+        : stripMouseEnableBytes(new Uint8Array(e.data as ArrayBuffer), mouseMode.current)
       t.write(data, () => releaseVisualHandoff())
     }
     ws.onclose = (e) => {
@@ -932,9 +956,26 @@ const Term = forwardRef<TermHandle, {
       if (n !== 0) { acc -= n; sendScroll(n > 0 ? 'up' : 'down', Math.abs(n)) }
       e.preventDefault(); e.stopPropagation()
     }
+    // 滚轮按像素累积、够一行才发一行（同上面触摸那条路）。以前每个事件至少算 1 行：触控板
+    // 一次轻滑连发几十个几像素的事件，每个都变成一行，Claude 那种全屏 TUI 里一下就飞出去几屏。
+    // deltaMode 1 = 按行、2 = 按页（Firefox / 部分鼠标驱动），也换算成行。
+    // 全屏 TUI（应用开了鼠标模式）：每个事件当场发，零头留着不清——xterm.js 的 Viewport 就是这么做的，
+    // 攒帧 / 起手特判 / 停顿清零都会让匀速一划变成一顿一顿。
+    // 普通壳：攒到一帧再发一条，后端那条路每条都要起 tmux 进程，逐条发直接堵成一卡一卡。
+    let wheelAcc = 0
+    let wheelFlush = 0
+    const flushWheel = () => {
+      wheelFlush = 0
+      const n = Math.trunc(wheelAcc)
+      if (n !== 0) { wheelAcc -= n; sendScroll(n < 0 ? 'up' : 'down', Math.abs(n)) }
+    }
     const onWheel = (e: WheelEvent) => {
-      const n = Math.max(1, Math.round(Math.abs(e.deltaY) / lineH()))
-      sendScroll(e.deltaY < 0 ? 'up' : 'down', n)
+      const rows = termRef.current?.rows || 24
+      wheelAcc += e.deltaMode === 1 ? e.deltaY : e.deltaMode === 2 ? e.deltaY * rows : e.deltaY / lineH()
+      if (mouseMode.current.on) {
+        const n = Math.trunc(wheelAcc / WHEEL_LINES_PER_NOTCH)
+        if (n !== 0) { wheelAcc -= n * WHEEL_LINES_PER_NOTCH; sendWheelReports(n < 0 ? 'up' : 'down', Math.abs(n), cellAt(e.clientX, e.clientY)) }
+      } else if (!wheelFlush) wheelFlush = requestAnimationFrame(flushWheel)
       e.preventDefault(); e.stopPropagation()
     }
     const onMouseUp = (e: MouseEvent) => {

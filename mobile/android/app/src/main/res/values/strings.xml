@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Roami</string>
+    <string name="pick_title">选择环境</string>
+    <string name="pick_sub">摇一摇可以随时回到这里</string>
+    <string name="pick_hint">https://192.168.1.10:13579</string>
+    <string name="pick_go">前往</string>
+    <string name="pick_help">地址要带协议和端口。选过一次之后下次启动会自动进入，倒计时期间点任意位置可以改。</string>
+    <string name="pick_auto">%1$d 秒后进入 %2$s</string>
+    <string name="pick_auto_cancel">已取消自动进入</string>
+    <string name="pick_delete">删掉这个环境？</string>
+    <string name="pick_bad_url">地址不对，要以 http:// 或 https:// 开头</string>
+    <string name="ssl_title">证书不受信任</string>
+    <string name="ssl_body">%1$s 用的是自签证书（或系统没装它的 CA）。信任并继续？以后这台服务器不再问。\n\n指纹 SHA-256：%2$s</string>
+    <string name="ssl_trust">信任并继续</string>
+    <string name="ssl_cancel">取消</string>
+    <string name="ch_events">会话事件</string>
+    <string name="ch_events_desc">会话在等你 / 做完 / 出错</string>
+    <string name="ch_link">连接状态</string>
+    <string name="link_connected">已连接 %1$s</string>
+    <string name="link_connecting">正在连接 %1$s</string>
+    <string name="link_login">打开 Roami 登录后开始接收通知</string>
+    <string name="link_stop">断开</string>
+    <string name="act_allow">允许</string>
+    <string name="act_deny">拒绝</string>
+</resources>

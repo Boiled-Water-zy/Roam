@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -82,6 +83,7 @@ func New(cfg Config) *gin.Engine {
 	go h.SyncLoop()                 // 后台兜底远端同步（10 §3 第三档），失败静默
 	go h.AgentLinkLoop()            // 会话 ↔ claude 对话 id 对账、归属跟着 worktree 走（api/session-home-sync.go）
 	h.SyncClaudeThemeOnce()         // Claude Code 主题对齐 Roami 主题（api/claude-theme-sync.go）
+	go h.SessionEventLoop()         // 「会话在等你」→ 收件箱 + Web Push（api/session-events.go）
 	browser.InitConfig(cfg.DataDir) // Chrome 启动配置持久化到 dataDir
 	phone.InitConfig(cfg.DataDir)   // 手机后端配置（本机模拟器/远程设备/真机）持久化到 dataDir
 	hub := stream.New(tt, cfg.LogsDir)
@@ -256,6 +258,25 @@ func New(cfg Config) *gin.Engine {
 		g.POST("/plugins/:id/restore", h.PluginRestore)
 		g.GET("/plugin/findings", h.PluginFindings)
 		g.GET("/plugin/notifications", h.PluginNotifications)
+		g.GET("/sessions/overview", h.SessionsOverview) // 手机会话页：会话 + 归属 + 活状态一次给全
+		g.GET("/inbox", h.InboxList)                    // 收件箱：会话事件（等你 / 做完 / 出错）+ 角标
+		g.POST("/inbox/read", h.InboxRead)              // 已读（ids 或 all）
+		g.GET("/push/vapid", h.PushVAPID)               // 本部署的 VAPID 公钥
+		g.GET("/events/ws", h.EventsWS)                 // 会话事件长连接（Android App 的通知来源）
+		// Android App 安装包：部署者用 mobile/android 打出来放到 <dataDir>/roami.apk，装到手机页给下载
+		g.GET("/apk", func(c *gin.Context) {
+			fp := filepath.Join(cfg.DataDir, "roami.apk")
+			if !fileExists(fp) {
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "NOT_FOUND", "message": "没有 roami.apk：见 docs/deploy/mobile.md"}})
+				return
+			}
+			c.Header("Content-Type", "application/vnd.android.package-archive")
+			c.Header("Content-Disposition", `attachment; filename="roami.apk"`)
+			c.File(fp)
+		})
+		g.POST("/push/subscribe", h.PushSubscribe) // 手机 PWA 的推送订阅
+		g.DELETE("/push/subscribe", h.PushUnsubscribe)
+		g.POST("/push/test", h.PushTest) // 发一条测试
 		g.POST("/plugins/:id/enable", h.PluginSetEnabled(true))
 		g.POST("/plugins/:id/disable", h.PluginSetEnabled(false))
 		g.GET("/plugins/:id/config", h.PluginConfig)
@@ -437,6 +458,10 @@ func mountPublic(r *gin.Engine, a *auth.Auth, cfg Config) {
 		c.JSON(http.StatusOK, gin.H{"data": checkUpdate(cfg.Version)})
 	})
 
+	// 「装到手机」页据此决定要不要引导装证书（免登录：扫码进来那一刻还没登录）
+	r.GET("/api/install-info", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{"tls": cfg.TLSEnabled, "selfSigned": selfSignedCert(cfg.TLSCertPath), "apk": fileExists(filepath.Join(cfg.DataDir, "roami.apk")), "apkVersion": apkVersion(cfg.DataDir)}})
+	})
 	// 下载自签证书（免登录）：手机装为受信任证书后即把本站当安全上下文，
 	// 可装成全屏 PWA、麦克风/剪贴板可用。TLS 关闭或证书不存在时返回 404。
 	r.GET("/cert.crt", func(c *gin.Context) {
@@ -462,6 +487,75 @@ func mountPublic(r *gin.Engine, a *auth.Auth, cfg Config) {
 	r.PUT("/home/sites", hm.PutSites)
 }
 
+// apkVersion 部署者放的那个 apk 是哪一版（build-apk.sh --install 写的旁路文件）；没有就空
+func apkVersion(dataDir string) string {
+	b, err := os.ReadFile(filepath.Join(dataDir, "roami.apk.version"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// webuiKeep 历史前端版本留几份：够覆盖「开着没刷新的旧页面」，又不至于一直攒（攒到过 59 份 1.8G）
+const webuiKeep = 8
+
+// olderBuilds 同级目录里的历史版本，新的在前；顺手把太老的删掉
+func olderBuilds(frontendDir string) []string {
+	root := filepath.Dir(frontendDir)
+	ents, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	type build struct {
+		dir string
+		mod time.Time
+	}
+	var all []build
+	for _, e := range ents {
+		d := filepath.Join(root, e.Name())
+		if !e.IsDir() || d == frontendDir {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(d, "index.html")); err == nil {
+			all = append(all, build{d, info.ModTime()})
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].mod.After(all[j].mod) })
+	var keep []string
+	for i, b := range all {
+		if i < webuiKeep {
+			keep = append(keep, b.dir)
+		} else {
+			_ = os.RemoveAll(b.dir)
+		}
+	}
+	return keep
+}
+
+var (
+	olderOnce sync.Once
+	olderDirs []string
+)
+
+// olderAssetIfWebui 同上，但只认内嵌解压目录
+func olderAssetIfWebui(frontendDir, rel string) string {
+	if filepath.Base(filepath.Dir(frontendDir)) != "webui" {
+		return ""
+	}
+	return olderAsset(frontendDir, rel)
+}
+
+func olderAsset(frontendDir, rel string) string {
+	olderOnce.Do(func() { olderDirs = olderBuilds(frontendDir) })
+	for _, d := range olderDirs {
+		base := filepath.Join(d, "assets")
+		if fp := filepath.Join(base, rel); strings.HasPrefix(fp, base) && fileExists(fp) {
+			return fp
+		}
+	}
+	return ""
+}
+
 func mountWeb(r *gin.Engine, frontendDir string) {
 	indexPath := filepath.Join(frontendDir, "index.html")
 	useReact := fileExists(indexPath)
@@ -469,10 +563,21 @@ func mountWeb(r *gin.Engine, frontendDir string) {
 	if useReact {
 		assetsDir := filepath.Join(frontendDir, "assets")
 		serveAsset := func(c *gin.Context) {
-			fp := filepath.Join(assetsDir, filepath.Clean("/"+c.Param("filepath")))
-			if !strings.HasPrefix(fp, assetsDir) || !fileExists(fp) {
+			rel := filepath.Clean("/" + c.Param("filepath"))
+			fp := filepath.Join(assetsDir, rel)
+			if !strings.HasPrefix(fp, assetsDir) {
 				c.Status(http.StatusNotFound)
 				return
+			}
+			if !fileExists(fp) {
+				// 升级之后还开着的旧页面，懒加载要的是**上一版**的文件名。文件名带内容 hash，
+				// 去历史版本目录里按名字找就是同一份内容；找不到才 404（页面那头会自己刷新到新版）。
+				if old := olderAssetIfWebui(frontendDir, rel); old != "" {
+					fp = old
+				} else {
+					c.Status(http.StatusNotFound)
+					return
+				}
 			}
 			// 产物文件名带内容 hash（内容变则名变），可放心让浏览器缓存一年且免回源验证；
 			// 否则每次打开页面都对全部 JS/CSS 发条件请求甚至重新下载，首屏明显变慢。
@@ -500,6 +605,10 @@ func mountWeb(r *gin.Engine, frontendDir string) {
 		r.GET("/assets/*filepath", serveAsset)
 		r.HEAD("/assets/*filepath", serveAsset)
 		log.Printf("前端: React (磁盘 %s)", frontendDir)
+		// 只在内嵌解压出来的目录上做（…/webui/<hash>）；开发时 -web 指到源码树，别去动它的兄弟目录
+		if filepath.Base(filepath.Dir(frontendDir)) == "webui" {
+			go olderOnce.Do(func() { olderDirs = olderBuilds(frontendDir) })
+		}
 	} else {
 		log.Printf("前端: 内嵌回退页 —— 运行 ./start.sh --dev 会构建 React")
 	}

@@ -28,6 +28,27 @@ export function lazyRetry<T extends ComponentType<any>>(
         if (i < DELAYS.length) await new Promise((r) => setTimeout(r, DELAYS[i]))
       }
     }
+    // 还有一种失败重试没用：服务器升级了，这张页面是旧版，要的文件名新版里没有。
+    // 这时候该做的是换到新版，而不是让人对着「组件加载失败」点重试
+    if (await reloadIfStale()) return new Promise<never>(() => {})
     throw last
   })
+}
+
+const RELOAD_KEY = 'tt-stale-reload-at'
+
+/** 线上的入口脚本名和这张页面加载的不一样 = 页面是旧版。刷新一次（30 秒内不重复，免得死循环） */
+async function reloadIfStale(): Promise<boolean> {
+  try {
+    const mine = Array.from(document.querySelectorAll<HTMLScriptElement>('script[src*="/assets/index-"]'))[0]?.src.split('/').pop()
+    if (!mine) return false
+    const html = await (await fetch('/', { cache: 'no-store' })).text()
+    const live = html.match(/assets\/(index-[\w-]+\.js)/)?.[1]
+    if (!live || live === mine) return false
+    const lastAt = Number(sessionStorage.getItem(RELOAD_KEY) || 0)
+    if (Date.now() - lastAt < 30_000) return false
+    sessionStorage.setItem(RELOAD_KEY, String(Date.now()))
+    location.reload()
+    return true
+  } catch { return false }
 }

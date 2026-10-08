@@ -376,7 +376,7 @@ export function NewProjectModal({ open, onClose, onCreated }: { open: boolean; o
               placeholder={t('project.cloneUrlPlaceholder')} />
           )}
           <Space.Compact style={{ width: '100%' }}>
-            <AutoComplete style={{ flex: 1 }} value={dir} onChange={setDir} autoFocus={source === 'existing'}
+            <AutoComplete style={{ flex: 1, minWidth: 0 }} value={dir} onChange={setDir} autoFocus={source === 'existing'}
               onSelect={(v) => fillNameFromDir(String(v))}
               onBlur={() => fillNameFromDir(dir)}
               options={recentDirs().map((d) => ({ value: d }))}
