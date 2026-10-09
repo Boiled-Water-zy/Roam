@@ -23,6 +23,7 @@ import FileWorkspace from './components/files/FileWorkspace'
 import AdaptivePanel from './components/shell/AdaptivePanel'
 import { InspectorColumn } from './components/shell/InspectorColumn'
 import MobileSubPage from './components/MobileSubPage'
+import { useBackDismiss } from './components/shell/useBackDismiss'
 import SettingsPage from './components/settings/SettingsPage'
 // 非首屏的重页面（蜂群/Git 面板/浏览器/手机镜像/插件）按路由懒加载：切到对应 tab 才拉 chunk，
 // 缩小首屏 index 块。都渲染在同一个 Suspense 边界内（见 lazyFallback，App 内 page）。
@@ -31,6 +32,11 @@ const WorktreePanel = lazyRetry(() => import('./components/git/WorktreePanel'))
 const RaceCreateModal = lazyRetry(() => import('./components/swarm/Race').then((m) => ({ default: m.RaceCreateModal })))
 const RaceComparePanel = lazyRetry(() => import('./components/swarm/Race').then((m) => ({ default: m.RaceComparePanel })))
 const PluginsPanel = lazyRetry(() => import('./components/plugins/PluginsPanel'))
+const InboxPage = lazyRetry(() => import('./components/inbox/InboxPage'))
+const MobileSessions = lazyRetry(() => import('./components/mobile/MobileSessions'))
+const MobileHome = lazyRetry(() => import('./components/mobile/MobileHome'))
+const InstallPage = lazyRetry(() => import('./components/install/InstallPage'))
+const MobileMe = lazyRetry(() => import('./components/mobile/MobileMe'))
 const BrowserView = lazyRetry(() => import('./components/mirror/BrowserView'))
 const PhoneView = lazyRetry(() => import('./components/mirror/PhoneView'))
 const Swarm = lazyRetry(() => import('./components/swarm/Swarm'))
@@ -49,7 +55,6 @@ import { Navigation } from './components/shell/Navigation'
 import { reorderTabs } from './components/shell/tabs'
 import { nextInspector, pruneTabInspector, recallTabInspector, rememberTabInspector, tabKey } from './components/shell/tab-inspector-memory'
 import { requestIntent, OPEN_FILE_INTENT } from './intents'
-import { SessionDock } from './components/shell/SessionDock'
 import { WorkspaceStatusBar } from './components/shell/WorkspaceStatusBar'
 import { systemCells } from './components/shell/status-system'
 import type { StatusAction } from './components/shell/status-cells'
@@ -95,17 +100,21 @@ const { Text } = Typography
 // 「概览」已并进项目页（18 设计）：两页画的是同一批项目卡、拉的是同一条 /projects，
 // 概览独有的问候条/行动队列/活动轨现在挂在项目列表页顶上。旧链接由 normalizeRoute 接住。
 const NAV = [
+  { key: 'home', labelKey: 'nav.home' },
+  { key: 'inbox', labelKey: 'nav.inbox' },
   { key: 'projects', labelKey: 'nav.projects' },
   { key: 'files', labelKey: 'nav.files' },
   { key: 'browser', labelKey: 'nav.browser' },
   { key: 'phone', labelKey: 'nav.phone' },
   { key: 'plugins', labelKey: 'nav.plugins' },
   { key: 'settings', labelKey: 'nav.env' },
+  { key: 'sessions', labelKey: 'nav.sessions' }, // 手机底栏第二格；桌面不列（23 设计 §5 退役的老会话页只留路由）
+  { key: 'me', labelKey: 'nav.me' },             // 手机「我」页：机器 · 通知 · 工具 · 账户
 ]
 
 // 桌面导航的两组（14 §4.4）。NAV 仍是全量注册表——命令面板和手机「更多」都从它取，
 // 所以 settings 留在 NAV 里，只是不进这两组：它单独摆在侧栏底部（见 Navigation 的 settings）。
-const NAV_WORKSPACE = ['projects', 'files']
+const NAV_WORKSPACE = ['inbox', 'projects', 'files']
 const NAV_TOOLS = ['browser', 'phone', 'plugins']
 
 // 手机底栏。13 §4.1 当初把「浏览器/手机镜像」折进「更多」，理由是低频且窄屏下几乎不可用
@@ -113,11 +122,8 @@ const NAV_TOOLS = ['browser', 'phone', 'plugins']
 // 恰恰是本机最常用的两个工具，藏在二级 sheet 里每次要点两下。现在放回底栏。
 // 概览并进项目页后这里空出一格，不再补人：4 格 + 「更多」= 5 个按钮，390 宽下每格 78，
 // 比原来 6 格的 65 宽出一截（13 §7.1 的命中区下限是 44，但相邻图标还要留够间隙）。
-const MOBILE_NAV_KEYS = ['projects', 'files', 'browser', 'phone']
-// 「更多」sheet 里的两段：会话属于工作区主线，不归到工具下面
-const MOBILE_MORE_WORKSPACE: string[] = [] // 会话页退役（23 设计 §5）：不再有入口，路由留给老链接
-const MOBILE_MORE_TOOLS = ['plugins', 'settings']
-const MOBILE_MORE_KEYS = [...MOBILE_MORE_WORKSPACE, ...MOBILE_MORE_TOOLS]
+// 24 稿 §5：手机四格 收件箱 · 会话 · 项目 · 我。文件 / 浏览器 / 手机镜像 / 插件 / 设置 从「我」进，不再有「更多」
+const MOBILE_NAV_KEYS = ['home', 'sessions', 'me']
 
 // 用 Canvas 容器查询排版的页面（见 index.css 的 .tt-canvas[data-cq]）。逐页开，
 // 不是全局开：container-type 会改变 fixed 后代的包含块。
@@ -154,6 +160,7 @@ export default function App() {
   const swarmSub = tab === 'swarm' && route.includes('/') ? decodeURIComponent(route.slice(route.indexOf('/') + 1)) : '' // 深链选中的蜂群
   const projectSub = tab === 'projects' && route.includes('/') ? decodeURIComponent(route.slice(route.indexOf('/') + 1)) : '' // 深链选中的项目
   const pluginSub = tab === 'plugins' && route.includes('/') ? decodeURIComponent(route.slice(route.indexOf('/') + 1)) : '' // 深链选中的插件（状态条点进来）
+  const inboxSub = tab === 'inbox' && route.includes('/') ? decodeURIComponent(route.slice(route.indexOf('/') + 1)) : '' // 从推送通知点进来要开的会话
   const settingsSub = tab === 'settings' && route.includes('/') ? route.slice(route.indexOf('/') + 1) : '' // 设置的哪一类（node/browser）
   const go = (k: string) => {
     const qi = location.hash.indexOf('?')
@@ -165,6 +172,26 @@ export default function App() {
   const [prefs] = usePreferences()
   const themeIcon = mode === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />
   const { phone: isMobile, desktop: hasSider } = useLayout()
+  // 点通知进来：#/inbox/<会话> → 直接开那个会话。放在这里而不是收件箱页里：那边只在挂载时认一次，
+  // 已经停在收件箱、或者同一个会话第二次来通知，就只会落在消息列表上。开完把地址收回 #/inbox，下次还能再触发。
+  // hook 必须在所有提前 return 之前；openTerm 定义在后面，走 ref 取最新的
+  const openTermRef = useRef<((n: string) => void) | null>(null)
+  useEffect(() => {
+    if (!authed || !inboxSub) return
+    const name = inboxSub
+    const qi = location.hash.indexOf('?')
+    history.replaceState(history.state, '', '#/inbox' + (qi >= 0 ? location.hash.slice(qi) : ''))
+    setRoute('inbox')
+    // 等路由变化引起的那轮覆盖层清理过去再开，否则刚打开就被一起收掉
+    // 不在清理函数里取消：上面 setRoute 会让这个 effect 立刻重跑一次，取消了就永远开不了
+    setTimeout(() => openTermRef.current?.(name), 60)
+  }, [authed, inboxSub]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isMobile || tab !== 'projects') return
+    const qi = location.hash.indexOf('?')
+    location.replace('#/home' + (qi >= 0 ? location.hash.slice(qi) : ''))
+  }, [isMobile, tab])
   // 全屏（平板更易用：隐藏浏览器栏，等价 F11）。监听变化以同步按钮图标
   const [isFs, setIsFs] = useState(false)
   useEffect(() => {
@@ -286,6 +313,8 @@ export default function App() {
   const noTabs = useRef(readTermTokens().none)
   const restored = useRef(false) // 还原完成前不许回写 URL，否则会把待还原的参数抹掉
   const [overlay, setOverlay] = useState(false) // 手机/平板全屏终端
+  // 安卓返回手势 / 浏览器后退先收掉全屏终端，不然路由退了、覆盖层还盖在上面，看着像「弹回来」
+  useBackDismiss(isMobile && overlay, () => setOverlay(false))
   const [moreOpen, setMoreOpen] = useState(false) // 手机「更多」sheet
   // 任务视图 = 桌面 + 路由 #/w + 有当前任务：中间整块给标签工作区，就是现成的 focus 几何
   const taskView = hasSider && tab === TASK_ROUTE
@@ -356,6 +385,27 @@ export default function App() {
   // 会话坞要显示「几个在等你」，而这个信号是 TerminalPane 抓屏算出来的（detectPrompt）。
   // 它已经在为每个已开会话轮询，别再开第二份——让它把结果递上来即可。
   const [mobileWaiting, setMobileWaiting] = useState<Record<string, boolean>>({})
+  // 会话坞右侧那个「N 等你」数的是全部会话，不只是打开过的：手机上 5s 拉一次 overview
+  const [waitingTotal, setWaitingTotal] = useState(0)
+  // 首页点了某个项目：会话页直接落在那个项目的 worktree 视图上
+  const [mobileProject, setMobileProject] = useState<{ name: string; dir: string; at: number } | null>(null)
+  // 离线条：sw 会把快照喂给收件箱 / 会话页，页面看着还活着，得明说这是上次的
+  const [offline, setOffline] = useState(typeof navigator !== 'undefined' && !navigator.onLine)
+  useEffect(() => {
+    const on = () => setOffline(false), off = () => setOffline(true)
+    window.addEventListener('online', on); window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+  useEffect(() => {
+    if (!authed || !isMobile) return
+    let stop = false
+    const load = () => api('GET', '/sessions/overview')
+      .then((r) => { if (!stop) setWaitingTotal(((r.data?.items || []) as { waiting: boolean }[]).filter((x) => x.waiting).length) })
+      .catch(() => {})
+    load()
+    const i = setInterval(load, 5000)
+    return () => { stop = true; clearInterval(i) }
+  }, [authed, isMobile])
   // 版本给状态条最右那一格用：**一次性**取，不是轮询（免登录接口，见 server.go）
   const [roamVersion, setRoamVersion] = useState('')
   useEffect(() => {
@@ -425,7 +475,7 @@ export default function App() {
         setSwarmCount(swarms.filter((x: any) => x?.status && x.status !== 'archived').length)
         void loadGit()
         // 项目行先画出来（/projects 是台账，几毫秒就回来）；worktree 慢，别让它压着项目一起等
-        if (hasSider) setTreeSrc((cur) => ({ ...cur, projects }))
+        setTreeSrc((cur) => ({ ...cur, projects }))
         // 左栏树要每个 git 项目的 worktree。后端每个 worktree 要跑十来条 git 命令，
         // 八个项目并发着 15s 一轮会把机器打满（实测 CPU 60%、温度报警），所以：
         // 串行、60s 一轮、项目列表照旧 15s 刷；手机没有树，不拉
@@ -711,7 +761,8 @@ export default function App() {
     const name = rawName.replace(/[.:]/g, '_')
     // 会话表里还没有它 = 刚建的：立刻刷会话表 / 归属表 / worktree，树上马上归位
     if (!sessList.some((s) => s.name === name)) { sessReload.current?.(); treeReload.current?.() }
-    setTerms((ts) => (ts.includes(name) ? ts : [...ts, name]))
+    // 手机没有标签条：只挂当前这一个。攒一串「打开过的」既看不见也关不掉，每个还占一条终端连接
+    setTerms((ts) => (hasSider ? (ts.includes(name) ? ts : [...ts, name]) : [name]))
     if (task) taskHint.current[name] = task
     setActive(name); setActiveFile('')
     if (hasSider) {
@@ -747,7 +798,11 @@ export default function App() {
     const dir = key ? (taskPathOf(tree, key) || sessionProject(looseSessionOf(key))?.dir || '') : ''
     // 名字是展示名（@roam_name），后端另发 id：所以前缀用任务的展示名，不是那串 2026-… 的会话 id
     const first = key ? firstSessionOf(tree, key) : null
-    const base = (first && sessionLabel(first)) || 'shell'
+    await newTerminalAt(kind, dir, (first && sessionLabel(first)) || 'shell', key || undefined)
+  }
+  // 手机没有树，worktree 路径直接给：目录就是目录，不经 taskPathOf 那趟查表（查不到会落到 ~）
+  const newTerminalAt = async (kind: 'shell' | AgentKind, dir: string, baseArg?: string, key?: TaskKey) => {
+    const base = baseArg || (dir ? dir.split('/').pop() : '') || 'shell'
     const suffix = ({ shell: 'sh', claude: 'cc', codex: 'cx', pi: 'pi', opencode: 'oc' } as const)[kind]
     let name = `${base}-${suffix}`
     const taken = new Set(sessList.map((s) => s.label || s.name))
@@ -759,7 +814,7 @@ export default function App() {
         const cmd = agentCommand(kind, prefs)
         await api('POST', '/tasks/_/send', { sess: actual, msg: cmd })
       }
-      openTerm(actual, key || undefined)
+      openTerm(actual, key)
     } catch (e: any) { antMessage.error(e.message) }
   }
   const renameOpenTerm = (oldName: string, newName: string) => {
@@ -869,6 +924,7 @@ export default function App() {
       onCollapse={taskView ? undefined : () => { setOverlay(false); space.setDockOpen(false) }}
       onReorder={reorderTerm}
       onNeedsInput={setMobileWaiting}
+      onOpenSession={(n) => openTerm(n)}
       onNew={taskView ? { terminal: () => { void newTerminalInTask('shell') }, claude: () => { void newTerminalInTask('claude') }, codex: () => { void newTerminalInTask('codex') }, pi: () => { void newTerminalInTask('pi') }, opencode: () => { void newTerminalInTask('opencode') }, taskLabel: activeTaskLabel } : undefined}
       // 任务视图里对话点路径 / Git 都落到右栏三面板；手机与 Page 态退回 TerminalPane 自己的二级页
       onOpenFile={taskView ? (path, line) => openFileTab(path, line) : undefined}
@@ -883,14 +939,33 @@ export default function App() {
     />
   )
 
+  // 手机会话页：项目分组标题点进去是 worktree 视图；「新会话」没项目可选就先建项目
+  const mobileSessions = (
+    <MobileSessions onOpen={(n) => openTerm(n)} openProject={mobileProject}
+      onNewTask={(dir) => { const d = dir || treeSrc.projects[0]?.dir; if (d) setNewTaskDir(d); else setNewProjectOpen(true) }}
+      onNewInWorktree={(kind, path) => { void newTerminalAt(kind, path) }} />
+  )
+  openTermRef.current = (n) => openTerm(n)
   const pages: any = {
     swarm: <Swarm openTerm={openTerm} initialSwarm={swarmSub || undefined} onNav={(n) => { location.hash = n ? '#/swarm/' + encodeURIComponent(n) : '#/swarm' }} />,
-    projects: <Projects openTerm={openTerm} closeTerm={closeTerm} initialKey={projectSub || undefined} activeTerm={active} />,
-    sessions: <Sessions openTerm={openTerm} closeTerm={closeTerm} activeTerm={active} />,
+    projects: isMobile
+      ? mobileSessions
+      : <Projects openTerm={openTerm} closeTerm={closeTerm} initialKey={projectSub || undefined} activeTerm={active} />,
+    sessions: isMobile
+      ? mobileSessions
+      : <Sessions openTerm={openTerm} closeTerm={closeTerm} activeTerm={active} />,
     files: <FilesPage openTerm={openTerm} />,
     settings: <SettingsPage sub={settingsSub} onNav={(r) => go(r)} onLogout={logout} />,
     hub: <HubPage />,
     plugins: <PluginsPanel initialId={pluginSub || undefined} />,
+    inbox: <InboxPage onOpenSession={(n) => openTerm(n)} />,
+    home: <MobileHome last={active} onOpen={(n) => openTerm(n)} onNav={(k) => go(k)}
+      onOpenProject={(p) => { setMobileProject({ name: p.name, dir: p.dir, at: Date.now() }); go('sessions') }}
+      onNewTask={() => { const d = treeSrc.projects[0]?.dir; if (d) setNewTaskDir(d); else setNewProjectOpen(true) }} />,
+    install: <InstallPage onBack={() => go('me')} />,
+    me: <MobileMe nodes={clusterNodes} curNodeId={curNodeId} onSwitchNode={(id) => switchNode(id)} onNav={(k) => go(k)} onSearch={openPalette} onNewProject={() => setNewProjectOpen(true)}
+      themeIcon={themeIcon} themeLabel={mode === 'dark' ? t('common.lightTheme') : t('common.darkTheme')} onToggleTheme={toggleTheme}
+      fsSupported={fsSupported} fsIcon={fsIcon} fsLabel={isFs ? t('common.exitFullscreen') : t('common.fullscreen')} onToggleFs={toggleFs} onLogout={logout} />,
     browser: <BrowserView />,
     phone: <PhoneView />,
   }
@@ -1113,22 +1188,23 @@ export default function App() {
               onPressEnter={() => document.querySelector<HTMLButtonElement>('.ant-modal .ant-btn-primary')?.click()} />
             <div style={{ marginTop: 8, color: 'var(--text-dimmer)', fontSize: 'var(--fs-meta)' }}>{t('tree.taskNameHint')}</div>
           </Modal>
-          {/* 开任务（照 Orca 的「创建工作树」框）：顶上先选项目，下面就是项目主页那个 composer */}
-          <Modal open={!!newTaskDir} footer={null} width={860} destroyOnClose onCancel={() => setNewTaskDir(null)} title={t('tree.newTask')}>
-            {newTaskDir && (
-              <>
-                <div className="tt-lbl">{t('tree.projectField')}</div>
-                <Select value={newTaskDir} onChange={(v) => setNewTaskDir(v)} style={{ width: '100%', marginBottom: 12 }}
-                  options={treeSrc.projects.map((p: any) => ({ value: p.dir, label: <span>{p.name} <span style={{ color: 'var(--text-dimmer)', fontFamily: 'var(--mono)', fontSize: 'var(--fs-micro)', marginLeft: 8 }}>{p.dir}</span></span> }))} />
-                <TaskComposer key={newTaskDir} dir={newTaskDir} isGit={treeSrc.projects.find((p: any) => p.dir === newTaskDir)?.git !== false}
-                  openTerm={openTerm} onCreated={() => setNewTaskDir(null)} autoFocus />
-              </>
-            )}
-          </Modal>
-          {/* 建完立刻刷树：项目列表 15s 一轮、worktree 60s 一轮，不刷就得等 */}
-          <NewProjectModal open={newProjectOpen} onClose={() => setNewProjectOpen(false)} onCreated={() => treeReload.current?.()} />
         </Sider>
       )}
+      {/* 开任务 / 新项目两个弹层桌面手机都要有：原来挂在 Sider 里，手机没有 Sider，点了没反应 */}
+      {/* 开任务（照 Orca 的「创建工作树」框）：顶上先选项目，下面就是项目主页那个 composer */}
+      <Modal open={!!newTaskDir} footer={null} width={860} destroyOnClose onCancel={() => setNewTaskDir(null)} title={t('tree.newTask')}>
+        {newTaskDir && (
+          <>
+            <div className="tt-lbl">{t('tree.projectField')}</div>
+            <Select value={newTaskDir} onChange={(v) => setNewTaskDir(v)} style={{ width: '100%', marginBottom: 12 }}
+              options={treeSrc.projects.map((p: any) => ({ value: p.dir, label: <span>{p.name} <span style={{ color: 'var(--text-dimmer)', fontFamily: 'var(--mono)', fontSize: 'var(--fs-micro)', marginLeft: 8 }}>{p.dir}</span></span> }))} />
+            <TaskComposer key={newTaskDir} dir={newTaskDir} isGit={treeSrc.projects.find((p: any) => p.dir === newTaskDir)?.git !== false}
+              openTerm={openTerm} onCreated={() => setNewTaskDir(null)} autoFocus />
+          </>
+        )}
+      </Modal>
+      {/* 建完立刻刷树：项目列表 15s 一轮、worktree 60s 一轮，不刷就得等 */}
+      <NewProjectModal open={newProjectOpen} onClose={() => setNewProjectOpen(false)} onCreated={() => treeReload.current?.()} />
 
       {/* 主区：Canvas ｜ Dock ｜ Inspector。终端**常驻挂载**（收起时宽度归零、Focus 时页面归零），换形态不断连接。*/}
       <Layout style={{ background: 'var(--bg-base)', minWidth: 0 }}>
@@ -1187,93 +1263,22 @@ export default function App() {
         )
       })()}
 
-      {/* 底栏 6 格 + 会话坞（13 §4.1/§4.2）：概览/项目/文件/浏览器/手机 + 更多。
-          360px 下每格 60px，标签 11px 单行截断——所以格数到此为止，再加就只剩图标了。
-          「更多」sheet 仍分「工具 / 账户」两段：退出登录和功能页并排时误触代价差了几个
-          数量级，所以它收在账户行的二级里。*/}
+      {/* 手机三项导航与页面内容保持固定的底部安全距离。 */}
       {isMobile && (
-        <div style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          zIndex: 'var(--z-nav)' as unknown as number, paddingBottom: 'var(--safe-b)',
-          background: 'var(--bg-container)', borderTop: '1px solid var(--border)',
-        }}>
-        {/* 会话坞叠在底栏之上，两者共用同一个 fixed 容器与安全区内边距——
-            分开两个 fixed 就得手算彼此的高度，底栏一改高度就错位 */}
-        <SessionDock
-          sessions={terms} active={active} needsInput={mobileWaiting}
-          running={(n) => !!(agentKinds[n] || claudeMap[n]?.running || codexMap[n]?.running)}
-          onOpen={() => setOverlay(true)}
-          onPick={(n) => { setActive(n); setOverlay(true) }}
-          onClose={closeTerm}
-        />
-        <nav style={{ display: 'flex' }}>
+        <div className="tt-bottomnav">
+        {offline && <div className="tt-offline">{t('mobile.offline')}</div>}
+        <nav aria-label={t('nav.home')}>
           {MOBILE_NAV_KEYS.map((key) => {
             const n = NAV.find((x) => x.key === key)!
             return (
-              <button key={n.key} onClick={() => go(n.key)} className="tt-bottomnav-btn"
-                style={{ color: tab === n.key ? 'var(--accent)' : 'var(--text-dim)' }}>
-                {ICONS[n.key]}<span>{t(n.labelKey)}</span>
+              <button key={n.key} type="button" onClick={() => go(n.key)} className="tt-bottomnav-btn"
+                aria-current={tab === n.key ? 'page' : undefined}>
+                <span className="ic">{ICONS[n.key]}{n.key === 'home' && waitingTotal > 0 && <i className="bd">{waitingTotal}</i>}</span><span>{t(n.labelKey)}</span>
               </button>
             )
           })}
-          <button onClick={() => setMoreOpen(true)} className="tt-bottomnav-btn"
-            style={{ color: MOBILE_MORE_KEYS.includes(tab) ? 'var(--accent)' : 'var(--text-dim)' }}>
-            <MoreIcon size={18} /><span>{t('common.more')}</span>
-          </button>
         </nav>
         </div>
-      )}
-
-      {isMobile && (
-        <MobileSheet open={moreOpen} title={t('common.more')} onClose={() => setMoreOpen(false)}>
-          {/* 手机没有顶栏，⌘K 也按不出来——全局搜索在这里给一个入口，否则手机上
-              根本到不了它（同一个面板，见 shell/palette）。 */}
-          <SheetRow icon={<SearchIcon size={16} />} title={t('workspace.search')}
-            desc={t('workspace.searchPlaceholder')}
-            onClick={() => { setMoreOpen(false); openPalette() }} />
-
-          {/* 机器排在最前：它换的是「下面这些页看哪台机器」，是别的行的前提，不是并列项。
-              桌面的切换器挂在 <Sider> 的底座里，而手机根本没有 Sider——这一段之前是缺的，
-              手机上连不上第二台机器（能看见别的机器，但切不过去）。
-              单机时 clusterNodes 为空，整段不出现，与今天逐项一致。 */}
-          {clusterNodes.length > 0 && (<>
-            <SheetSection>{t('node.switch')}</SheetSection>
-            {clusterNodes.map((n) => (
-              <SheetRow key={n.id}
-                icon={<NodeMark name={n.name} size="sm" current={n.id === curNodeId} offline={!n.online} />}
-                title={n.name}
-                desc={n.online ? t('node.sessionsN', { count: n.sessionCount }) : t('node.offline')}
-                active={n.id === curNodeId}
-                extra={<i style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: nodeDotColor(n) }} />}
-                onClick={() => { if (!n.online || n.id === curNodeId) { setMoreOpen(false); return } switchNode(n.id) }} />
-            ))}
-          </>)}
-
-          <SheetSection>{t('nav.groupWorkspace')}</SheetSection>
-          {MOBILE_MORE_WORKSPACE.map((key) => {
-            const n = NAV.find((x) => x.key === key)!
-            return <SheetRow key={n.key} icon={ICONS[n.key]} title={t(n.labelKey)}
-              onClick={() => { setMoreOpen(false); go(n.key) }} />
-          })}
-          <SheetSection>{t('nav.groupTools')}</SheetSection>
-          {MOBILE_MORE_TOOLS.map((key) => {
-            const n = NAV.find((x) => x.key === key)!
-            return <SheetRow key={n.key} icon={ICONS[n.key]} title={t(n.labelKey)}
-              onClick={() => { setMoreOpen(false); go(n.key) }} />
-          })}
-          <SheetSection>{t('mobile.groupAccount')}</SheetSection>
-          <SheetRow icon={themeIcon} title={mode === 'dark' ? t('common.lightTheme') : t('common.darkTheme')}
-            onClick={() => { toggleTheme() }} />
-          {fsSupported && (
-            <SheetRow icon={fsIcon} title={isFs ? t('common.exitFullscreen') : t('common.fullscreen')}
-              onClick={() => { toggleFs() }} />
-          )}
-          <SheetRow icon={ICONS.github} title={t('nav.about')} onClick={() => { setMoreOpen(false); go('about') }} />
-          <SheetRow
-            icon={<LogoutIcon />}
-            title={t('common.logout')} desc={t('common.logoutConfirm')} danger
-            onClick={() => { setMoreOpen(false); Modal.confirm({ title: t('common.logoutConfirm'), okText: t('common.logout'), cancelText: t('common.cancel'), okButtonProps: { danger: true }, onOk: logout }) }} />
-        </MobileSheet>
       )}
 
       {/* 全局搜索挂在这里而不是顶栏里：手机没有顶栏、终端聚焦时 xterm 会吃掉按键，

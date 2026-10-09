@@ -23,6 +23,10 @@ import { ComposerPlus } from './ComposerPlus'
 import { StatusBar, type StatusActions } from './StatusBar'
 import type { AgentStatus } from './status'
 
+// 排队中气泡的会话名 → 队列。模块级、不随组件卸载清空（见下方注释）。
+// 数量很小（几条文本），且已发出的会话消息很快就会被转录对账掉，不会无限增长。
+const outboxStore = new Map<string, { id: number; text: string }[]>()
+
 export function ChatShell({ name, accent, placeholder, messages, results, renderMessage, pending, busy, error, onOpenFile, tasks, status, onOpenGit, lastErrorId, hasEarlier, onLoadEarlier, agent, emptyHint, active }: {
   /** 这条 composer 发给谁：左端那枚亮着的 agent pill（22 设计 §3.3） */
   agent?: 'claude' | 'codex'
@@ -212,21 +216,44 @@ export function ChatShell({ name, accent, placeholder, messages, results, render
    * 输入框清空了，然后什么都没有，连自己刚说了什么都翻不到。这里本地留一份，画成
    * 「排队中」的气泡，等它真进转录（下面那个 effect 按原文对账）再撤掉。
    */
-  const [outbox, setOutbox] = useState<{ id: number; text: string }[]>([])
+  // 存在组件外的模块级表，不是 useState 的初值：手机上切会话会把没在看的那个从 DOM 里摘掉
+  //（同一时间只挂一个终端连接），ChatShell 跟着卸载，state 初始化一次就清零了——
+  // 于是"切一下会话再切回来，排队中的气泡凭空消失"，其实消息已经发出去、真排在 TUI 队列里，
+  // 消失的只是本地这个提示气泡。按会话名存到组件外面，卸载/重挂都读得到同一份。
+  const [outbox, setOutboxState] = useState<{ id: number; text: string }[]>(() => outboxStore.get(name) || [])
+  const setOutbox = (fn: (q: { id: number; text: string }[]) => { id: number; text: string }[]) => {
+    setOutboxState((q) => {
+      const next = fn(q)
+      if (next.length) outboxStore.set(name, next)
+      else outboxStore.delete(name)
+      return next
+    })
+  }
+  // 会话名变了（同一个 ChatShell 实例被换绑到另一个会话，理论上不会发生，防御一下）：重新挂载那份
+  const lastName = useRef(name)
+  useEffect(() => {
+    if (lastName.current === name) return
+    lastName.current = name
+    setOutboxState(outboxStore.get(name) || [])
+  }, [name])
   // 兜底：忙完了就把排队区清空。按原文对账是主路，但转录里的用户消息可能被加工过
   //（命令展开、系统提醒拼进同一条），万一对不上，这条保证气泡不会永远挂着——
   //  Agent 闲下来就说明队列已经消化完了。
   const wasBusy = useRef(busy)
   useEffect(() => {
-    if (wasBusy.current && !busy) setOutbox([])
+    if (wasBusy.current && !busy) setOutbox(() => [])
     wasBusy.current = busy
   }, [busy])
   useEffect(() => {
     setOutbox((q) => {
       if (!q.length) return q
-      const said = new Set(messages.filter((m) => m.role === 'user')
-        .map((m) => m.blocks.map((b) => b.text || '').join('\n').trim()))
-      const next = q.filter((x) => !said.has(x.text))
+      // 不按原文逐字比：实测发出去的和转录里的会差一两个字（开头少一个「你」），
+      // 逐字比就对不上，同一句话一条已发、一条「排队中」并排挂着。去掉空白后互相包含就算同一句
+      const norm = (v: string) => v.replace(/\s+/g, '')
+      const said = messages.filter((m) => m.role === 'user').slice(-8)
+        .map((m) => norm(m.blocks.map((b) => b.text || '').join('\n')))
+      const same = (x: string) => { const n = norm(x); return said.some((v) => v === n || (n.length >= 4 && (v.includes(n) || (v.length >= 4 && n.includes(v))))) }
+      const next = q.filter((x) => !same(x.text))
       return next.length === q.length ? q : next
     })
   }, [messages])

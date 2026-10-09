@@ -35,11 +35,38 @@ func waitClean(s string) string {
 
 // sessionCapture 抓会话当前屏纯文本（=name 精确匹配，避开 tmux -t 前缀匹配 footgun）。
 func sessionCapture(name string, lines int) string {
-	out, err := exec.Command("tmux", "capture-pane", "-t", "="+name, "-p", "-J", "-S", "-"+strconv.Itoa(lines)).Output()
+	// `=name:`：pane 类命令对裸 `=name` 报 can't find pane（tmux 3.4），带冒号才按「该会话当前窗口」解析
+	out, err := exec.Command("tmux", "capture-pane", "-t", "="+name+":", "-p", "-J", "-S", "-"+strconv.Itoa(lines)).Output()
 	if err != nil {
 		return ""
 	}
 	return string(out)
+}
+
+// chromeLine Claude Code / Codex 自己的外壳行：状态栏、标签栏、输入框边框、提示符那行（空的，或用户刚敲的话）、
+// 转圈的进度行（✻ Improvising… (19m · ↓ 15k tokens)）。当摘要没意义：摘要要的是 agent 说的最后一句。
+var chromeLine = regexp.MustCompile(`^(⏵⏵|⧉|❯|>\s*$|\S\s+\S+…\s*\(|\S\s+\S+ for \d+[hms]|[─━═]+$|\?\s*for shortcuts)|shift\+tab to cycle|for agents|esc to interrupt|to run in background|to send now|Jump to bottom|\d: Bad\s+\d: Fine|to review · \d+ to send|What should Claude do instead|ctrl\+o to expand|/rc\s*$|· /effort|Tip: |Update installed|login expires|until auto-compact|/clear to save|/rc failed|^◯ |^● (high|medium|low) ·`)
+
+// agentBusy 一行里有没有「正在干活」的迹象：(esc to interrupt)，或转圈那行 ✻ Improvising… (19m 35s · …)。
+// 「✻ Crunched for 17s」是干完之后的小结，不算。
+var agentBusy = regexp.MustCompile(`esc to interrupt|\S…\s*\([^)\n]*(\d+s|thinking)`)
+
+// screenBusy 只看屏幕最底下十来行：整屏匹配的话，滚动区里一句旧的「esc to interrupt」、
+// 或者对话里正好提到这几个词，都会把停着的会话判成在跑。
+func screenBusy(capture string) bool {
+	lines := strings.Split(strings.ReplaceAll(waitStripCtl(capture), "\r", ""), "\n")
+	seen := 0
+	for i := len(lines) - 1; i >= 0 && seen < 12; i-- {
+		l := waitClean(lines[i])
+		if l == "" {
+			continue
+		}
+		seen++
+		if agentBusy.MatchString(l) {
+			return true
+		}
+	}
+	return false
 }
 
 // sessionTail 取一屏 capture 里最后一行有内容的输出，给「等待输入」行动卡当摘要。
@@ -47,7 +74,7 @@ func sessionCapture(name string, lines int) string {
 func sessionTail(capture string, max int) string {
 	lines := strings.Split(strings.ReplaceAll(waitStripCtl(capture), "\r", ""), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		if s := waitClean(lines[i]); s != "" {
+		if s := waitClean(lines[i]); s != "" && !chromeLine.MatchString(s) {
 			if r := []rune(s); len(r) > max {
 				return string(r[:max])
 			}
@@ -142,4 +169,86 @@ func sessionWaiting(capture string) bool {
 		break
 	}
 	return false
+}
+
+// waitingPrompt 从一屏 capture 里取出正在等的那个问题和它的选项（给通知正文用）。
+// 与 sessionWaiting 同一套判据：最后一组从 1 起连续编号的选项 + 上面最多三行问题。
+// 认不出选项时返回 ok=false，调用方退回 sessionTail。
+func waitingPrompt(capture string) (question string, options []string, ok bool) {
+	lines := strings.Split(strings.ReplaceAll(waitStripCtl(capture), "\r", ""), "\n")
+	type opt struct {
+		num, idx int
+		label    string
+	}
+	var opts []opt
+	for idx, raw := range lines {
+		if m := waitOpt.FindStringSubmatch(waitClean(raw)); m != nil {
+			n, _ := strconv.Atoi(m[1])
+			opts = append(opts, opt{num: n, idx: idx, label: strings.TrimSpace(m[2])})
+		}
+	}
+	var g []opt
+	for i := len(opts) - 1; i >= 0; i-- {
+		if len(g) == 0 || g[0].idx-opts[i].idx <= 12 {
+			g = append([]opt{opts[i]}, g...)
+		} else {
+			break
+		}
+	}
+	if len(g) < 2 {
+		return "", nil, false
+	}
+	for k, o := range g {
+		if o.num != k+1 {
+			return "", nil, false
+		}
+	}
+	var qlines []string
+	for i := g[0].idx - 1; i >= 0 && g[0].idx-i <= 6; i-- {
+		c := waitClean(lines[i])
+		if c == "" {
+			if len(qlines) > 0 {
+				break
+			}
+			continue
+		}
+		if waitOpt.MatchString(c) {
+			continue
+		}
+		qlines = append([]string{c}, qlines...)
+		if len(qlines) >= 3 {
+			break
+		}
+	}
+	for _, o := range g {
+		options = append(options, o.label)
+	}
+	return strings.TrimSpace(strings.Join(qlines, " ")), options, true
+}
+
+// waitingSummary 通知正文：「问题 · 1. Yes / 2. No」，认不出就退回最后一行
+func waitingSummary(capture string, max int) string {
+	q, opts, ok := waitingPrompt(capture)
+	if !ok {
+		return sessionTail(capture, max)
+	}
+	parts := make([]string, 0, len(opts))
+	for i, o := range opts {
+		if i >= 3 {
+			parts = append(parts, "…")
+			break
+		}
+		if r := []rune(o); len(r) > 24 {
+			o = string(r[:24]) + "…"
+		}
+		parts = append(parts, strconv.Itoa(i+1)+". "+o)
+	}
+	s := strings.Join(parts, " / ")
+	if q != "" {
+		s = q + " · " + s
+	}
+	if r := []rune(s); len(r) > max {
+		return string(r[:max]) + "…"
+	}
+	return s
 }

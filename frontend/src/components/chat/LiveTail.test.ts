@@ -55,4 +55,10 @@ describe('parseTail', () => {
   it('空输入不炸', () => {
     expect(parseTail('')).toEqual([])
   })
+
+  it('Tip 整段、模式栏、折行剩下的半截都不进实时输出', () => {
+    const raw = ['● 在跑测试', '  ⎿  Tip: Use /btw to ask a quick side', '     question without interrupting Claude\'s', '     current work', '', '  (ctrl+b ctrl+b (twice) to run in', '  background)', '  ⏵⏵ auto mode on · 1 shell · ← for agen…'].join('\n')
+    const lines = parseTail(raw).map((l) => l.text)
+    expect(lines).toEqual(['在跑测试'])
+  })
 })

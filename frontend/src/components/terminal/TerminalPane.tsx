@@ -29,9 +29,10 @@ import { PromptDialog, PromptSignal, advancePromptSignal, detectPrompt } from '.
 import { SessionTitle, TabName, sessionDisplay } from '../sessions/session-label'
 import { sessionProject } from '../sessions/session-project'
 import AdaptivePanel from '../shell/AdaptivePanel'
+import { useEdgeSwipe } from '../shell/edge-swipe'
 import { DPad } from '../shell/DPad'
 import { MobileSheet, SheetRow, SheetSection } from '../shell/MobileSheet'
-import { SessionSwitchSheet } from '../shell/SessionDock'
+import { MobileSessionSwitch } from '../mobile/MobileSessionSwitch'
 import { Button, Dropdown, Input, Modal, Spin, Tooltip, App as AntApp } from 'antd'
 import { AgentLogo, ChevronDown, ChevronLeft, ChevronRight, PlusIcon, StopIcon, TabsIcon, TerminalIcon, PanelRightIcon } from '../../icons'
 import { agentName, type AgentKind } from '../../agent-kind'
@@ -56,6 +57,8 @@ export default function TerminalPane(props: {
   /** 标签条右端「新建 ▾」：在当前任务里开终端 / 去项目页开新任务。不传就不画 */
   /** 标签条「新建」：三样都在当前任务的 worktree 里派生；taskLabel 写在菜单顶上说明白 */
   onNew?: { terminal: () => void; claude: () => void; codex: () => void; pi: () => void; opencode: () => void; taskLabel?: string }
+  /** 手机切换单里点了一个还没打开的会话 */
+  onOpenSession?: (name: string) => void
   /** 右栏开关（任务视图）：亮着 = 开着 */
   inspector?: { open: boolean; toggle: () => void }
   /** 对话里点 Read/Edit 的路径 → 右栏文件面板打开（22 设计 §3.4）；不传就退回今天的路（文件页） */
@@ -75,7 +78,7 @@ export default function TerminalPane(props: {
   /** 从对话里点「path:line」跳过来要定位到那一行；nonce 让同一处点第二次也响 */
   reveal?: { path: string; line: number; nonce: number }
 }) {
-  const { terms, active, setActive, closeTerm, fontSize, setFontSize, statusMap, setStatus, termRefs, sendKey, onCollapse, claudeMap, claudeView, setClaudeView, codexMap, codexView, setCodexView, agentKinds, onRename, onReorder, onNeedsInput, focus, onNew, inspector, onOpenFile, onOpenGit, fileTabs, activeFile, taskDir, onFileTab, onCloseFile, onPinFile, onFileMode, reveal } = props
+  const { terms, active, setActive, closeTerm, fontSize, setFontSize, statusMap, setStatus, termRefs, sendKey, onCollapse, claudeMap, claudeView, setClaudeView, codexMap, codexView, setCodexView, agentKinds, onRename, onReorder, onNeedsInput, focus, onNew, onOpenSession, inspector, onOpenFile, onOpenGit, fileTabs, activeFile, taskDir, onFileTab, onCloseFile, onPinFile, onFileMode, reveal } = props
   const tabs = terms
   const curFile = activeFile || ''
   // 文件标签的脏标记：FileView 报上来，关标签前问一句（FileWorkspace 同款）
@@ -131,7 +134,12 @@ export default function TerminalPane(props: {
     }
   }
   const activeNeedsInput = !!(active && termNeedsInput[active])
-  const dot = activeNeedsInput ? 'var(--warn)' : st === 'connected' ? 'var(--ok)' : st === 'connecting' ? 'var(--warn)' : 'var(--danger)'
+  const dotOf = (name: string) => {
+    if (termNeedsInput[name]) return 'var(--warn)'
+    if (statusMap[name] === 'connected' || claudeMap[name]?.running || codexMap[name]?.running) return 'var(--ok)'
+    return statusMap[name] === 'connecting' ? 'var(--warn)' : 'var(--danger)'
+  }
+  const dot = active ? dotOf(active) : 'var(--danger)'
   // 灵动岛的「活着」判据：有 Agent 在跑。会话只是连着（st==='connected'）不算——
   // 那是个静态事实，让点一直呼吸等于把呼吸这个信号用废了。
   const activeAgentLive = !!(active && (agentKinds[active] || claudeMap[active]?.running || codexMap[active]?.running))
@@ -273,6 +281,9 @@ export default function TerminalPane(props: {
   // 标签拖拽排序（14 §7.1）：dragTab / dropAt 只用来画反馈（半透明 + 插入线），
   // 落点判定全部走事件本身，见下面两个 helper。
   const { phone: isPhone } = useLayout()
+  // 手机：左边缘右滑收起会话页，右边缘左滑翻到「改动」面（24 稿 §5 会话页两面）
+  const phoneRootRef = useRef<HTMLDivElement>(null)
+  useEdgeSwipe(phoneRootRef, { enabled: isPhone, onBack: onCollapse, onForward: () => openGitRef.current?.() })
   const ws = prefsData.workspace
   const [typing, setTyping] = useState(false)
   // 快捷键条的两侧渐隐：和标签条同一套做法（溢出时才提示"这边还有"）
@@ -611,9 +622,7 @@ export default function TerminalPane(props: {
 
   // ── 会话（终端）各部件抽成局部 JSX：左侧停靠走 <FileWorkspace> 的槽位，右侧抽屉走原地布局，二者共用同一份 ──
   // 标签条是单行横向滑动：窄栏/手机上开的会话一多，当前标签就滑出视口了 → 切换后把它带回来。
-  // 会话状态点：等待确认=琥珀，已连接=绿，连接中=琥珀，断开=红（与列表页同一套色）
-  const dotOf = (name: string) => termNeedsInput[name] ? 'var(--warn)'
-    : statusMap[name] === 'connected' ? 'var(--ok)' : statusMap[name] === 'connecting' ? 'var(--warn)' : 'var(--danger)'
+  // Agent 正在工作时仍可通过聊天继续交互；此时终端 WS 断开不代表会话不可用。
   const statusDot = (color: string, size = 7) => (
     <i style={{ width: size, height: size, borderRadius: '50%', flex: `0 0 ${size}px`, background: color, boxShadow: `0 0 0 3px ${color}26` }} />
   )
@@ -833,7 +842,6 @@ export default function TerminalPane(props: {
               否则 space-between 会把计数也均分到中间去 */}
           <span className="ri">
             {activeNeedsInput && <span className="tag">{t('session.waiting')}</span>}
-            {terms.length > 1 && <span className="n">{terms.length}</span>}
             <span className="ca">{TI.caret}</span>
           </span>
         </button>
@@ -849,14 +857,16 @@ export default function TerminalPane(props: {
             <AgentLogo kind="codex" size={16} />
           </button>
         )}
+        <button type="button" className={`ic${showGit ? ' on' : ''}`} aria-label={t('git.changes')} onClick={toggleGit}>
+          {TI.git}
+        </button>
         <button type="button" className="ic" aria-label={t('common.more')} onClick={() => setMoreSheet(true)}>
           {TI.dots}
         </button>
       </div>
-      <SessionSwitchSheet open={switchOpen} onClose={() => setSwitchOpen(false)}
-        sessions={terms} active={active} needsInput={termNeedsInput}
-        running={(n) => !!(agentKinds[n] || claudeMap[n]?.running || codexMap[n]?.running)}
-        onPick={setActive} onCloseSession={closeTerm} />
+      <MobileSessionSwitch open={switchOpen} onClose={() => setSwitchOpen(false)} active={active}
+        onPick={(n) => (onOpenSession ? onOpenSession(n) : setActive(n))}
+        onAll={() => { onCollapse?.(); location.hash = '#/sessions' }} />
       <MobileSheet open={moreSheet} title={t('common.more')} onClose={() => setMoreSheet(false)}>
         <SheetSection>{t('mobile.groupSession')}</SheetSection>
         <SheetRow icon={TI.rename} title={t('session.rename')} onClick={() => { setMoreSheet(false); active && setRenameSession(active) }} />
@@ -1055,7 +1065,8 @@ export default function TerminalPane(props: {
   )
   const sessionBottom = (
     <>
-      {isTouch && !inChat && (
+      {/* 输入条 / 快捷键条只在手机档（24 稿 §3 #8）：触屏笔记本有实体键盘，不需要这两条 */}
+      {isPhone && !inChat && (
         <div style={{ display: 'flex', gap: 'var(--sp-2)', padding: '8px 8px 0' }} onDragOver={allowPathDrop} onDrop={onInputDrop}>
           <Input ref={mobileInputRef} value={line}
             onFocus={() => { exitCopyMode(); setTyping(true) }}
@@ -1071,7 +1082,7 @@ export default function TerminalPane(props: {
           手机上这 49px 直接等于终端少 3 行。桌面不受影响。
           `tt-keyrow` 给两侧渐隐 + 滚轮横移：这一条 15 个按钮宽 913，窄栏里只露得出 605，
           而原来既没有渐隐也没有滚动条，右边缘正好把某个键切成一半——看着就是"没显示全"。 */}
-      {!inChat && isTouch && (!isPhone || typing) && (
+      {!inChat && isPhone && typing && (
         <div className="tt-keyrow" ref={keyRowRef}
           onScroll={syncKeyFade}
           onWheel={(e) => {
@@ -1167,7 +1178,7 @@ export default function TerminalPane(props: {
           leadingContent={terminalArea} chrome={sessionToolbar} footer={sessionBottom}
         />
       ) : (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <div ref={phoneRootRef} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             {phoneChrome || <>{tabStrip}{curFile
               ? <FilePathBar path={curFile} root={taskDir || ''} mode={(fileTabs || []).find((f) => f.path === curFile)?.mode || 'source'} onMode={(m) => onFileMode?.(curFile, m)} />
