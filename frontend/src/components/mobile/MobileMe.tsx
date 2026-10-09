@@ -30,11 +30,17 @@ export default function MobileMe({ nodes, curNodeId, onSwitchNode, onNav, onSear
   const { t } = useI18n()
   return (
     <div className="tt-mme">
-      <SheetRow icon={<SearchIcon size={16} />} title={t('workspace.search')} desc={t('workspace.searchPlaceholder')} onClick={onSearch} />
-      <SheetRow icon={<PlusIcon size={16} />} title={t('project.newProject')} onClick={onNewProject} />
+      <header className="tt-pagehead tt-mobile-pagehead">
+        <div className="ttl"><div className="kicker">{t('mobile.me.kicker')}</div><h2>{t('nav.me')}</h2><p>{t('mobile.me.lead')}</p></div>
+      </header>
+      <div className="tt-mme-group">
+        <SheetRow icon={<SearchIcon size={16} />} title={t('workspace.search')} desc={t('workspace.searchPlaceholder')} onClick={onSearch} />
+        <SheetRow icon={<PlusIcon size={16} />} title={t('project.newProject')} onClick={onNewProject} />
+      </div>
 
       {nodes.length > 0 && (<>
         <SheetSection>{t('node.switch')}</SheetSection>
+        <div className="tt-mme-group">
         {nodes.map((n) => (
           <SheetRow key={n.id}
             icon={<NodeMark name={n.name} size="sm" current={n.id === curNodeId} offline={!n.online} />}
@@ -44,27 +50,34 @@ export default function MobileMe({ nodes, curNodeId, onSwitchNode, onNav, onSear
             extra={<i style={{ display: 'block', width: 7, height: 7, borderRadius: '50%', background: nodeDotColor(n as any) }} />}
             onClick={() => { if (n.online && n.id !== curNodeId) onSwitchNode(n.id) }} />
         ))}
+        </div>
       </>)}
 
       <SheetSection>{t('mobile.sec.notify')}</SheetSection>
-      <SheetRow icon={<DeviceIcon size={16} />} title={t('install.meRow')} desc={t('install.pageLead')} onClick={() => onNav('install')} />
-      <div className="tt-mme-push">
-        <div><b>{t('set.push')}</b><span>{t('set.pushHelp')}</span></div>
-        <PushSettings />
+      <div className="tt-mme-group">
+        <SheetRow icon={<DeviceIcon size={16} />} title={t('install.meRow')} desc={t('install.pageLead')} onClick={() => onNav('install')} />
+        <div className="tt-mme-push">
+          <div><b>{t('set.push')}</b><span>{t('set.pushHelp')}</span></div>
+          <PushSettings />
+        </div>
       </div>
 
       <SheetSection>{t('nav.groupTools')}</SheetSection>
+      <div className="tt-mme-group">
       {['files', 'browser', 'phone', 'plugins'].map((key) => (
         <SheetRow key={key} icon={ICONS[key]} title={t('nav.' + key)} onClick={() => onNav(key)} />
       ))}
+      </div>
 
       <SheetSection>{t('mobile.groupAccount')}</SheetSection>
+      <div className="tt-mme-group">
       <SheetRow icon={ICONS.settings} title={t('nav.env')} onClick={() => onNav('settings')} />
       <SheetRow icon={themeIcon} title={themeLabel} onClick={onToggleTheme} />
       {fsSupported && <SheetRow icon={fsIcon} title={fsLabel} onClick={onToggleFs} />}
       <SheetRow icon={ICONS.github} title={t('nav.about')} onClick={() => onNav('about')} />
       <SheetRow icon={<LogoutIcon />} title={t('common.logout')} desc={t('common.logoutConfirm')} danger
         onClick={() => Modal.confirm({ title: t('common.logoutConfirm'), okText: t('common.logout'), cancelText: t('common.cancel'), okButtonProps: { danger: true }, onOk: onLogout })} />
+      </div>
     </div>
   )
 }

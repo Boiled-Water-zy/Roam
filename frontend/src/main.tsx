@@ -10,6 +10,7 @@ import { roamP2PEcho } from './p2p/transport'
 import { readFileRange } from './p2p/file-bytes'
 import { wireFileBytesToServiceWorker } from './p2p/file-bytes-sw'
 import './index.css'
+import './mobile-material.css'
 
 // [临时/仅开发] P2P 直连的控制台自测入口（不接产品 UI，避免触发 i18n 规范）：
 //   window.roamP2PSpike()             // transport 自测：收随机字节流丢弃，只统计吞吐

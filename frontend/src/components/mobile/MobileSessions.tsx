@@ -162,9 +162,18 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
   if (cur) return <MobileProjectDetail name={cur.name} dir={cur.dir} onBack={() => setCur(null)} onOpenSession={onOpen} onNewInWorktree={onNewInWorktree} onNewTask={onNewTask} />
   return (
     <div className="tt-msess">
+      <header className="tt-pagehead tt-mobile-pagehead">
+        <div className="ttl">
+          <div className="kicker">{t('mobile.sessions.kicker')}</div>
+          <h2>{t('nav.sessions')}</h2>
+          <p>{t('mobile.sessions.lead')}</p>
+        </div>
+        <div className="acts">
+          <button type="button" className="tt-mobile-action" onClick={() => onNewTask()}><PlusIcon size={16} />{t('mobile.newSession')}</button>
+        </div>
+      </header>
       <div className="tt-msess-head">
         <Input allowClear prefix={<SearchIcon size={14} />} placeholder={t('mobile.searchSessions')} value={q} onChange={(e) => setQ(e.target.value)} />
-        <button type="button" className="tt-act" onClick={() => onNewTask()}><PlusIcon size={14} />{t('mobile.newSession')}</button>
       </div>
       <div className="tt-msess-pills">
         {(['all', 'waiting', 'running', 'idle'] as const).map((k) => {

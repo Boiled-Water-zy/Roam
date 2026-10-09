@@ -67,11 +67,11 @@ export default function MobileProjectDetail({ name, dir, onBack, onOpenSession, 
   const shown = [...all.filter((w) => busy(w) || w.isMain).sort((a, b) => rank(a) - rank(b)), ...(showQuiet ? quiet : [])]
   return (
     <div className="tt-mproj" ref={rootRef}>
-      <div className="tt-mproj-head">
-        <button type="button" className="tt-act" onClick={onBack}><ChevronLeft size={14} />{t('nav.sessions')}</button>
-        <b>{name}</b>
-        <button type="button" className="tt-act" onClick={() => onNewTask(dir)}><PlusIcon size={14} />{t('mobile.proj.newTask')}</button>
-      </div>
+      <header className="tt-pagehead tt-mobile-pagehead tt-mobile-detailhead">
+        <button type="button" className="tt-mobile-back" onClick={onBack} aria-label={t('common.back')}><ChevronLeft size={20} /></button>
+        <div className="ttl"><div className="kicker">{t('nav.sessions')}</div><h2>{name}</h2></div>
+        <div className="acts"><button type="button" className="tt-mobile-action" onClick={() => onNewTask(dir)}><PlusIcon size={16} />{t('mobile.proj.newTask')}</button></div>
+      </header>
       {wts === null && <div style={{ display: 'grid', placeItems: 'center', padding: 40 }}><Spin /></div>}
       {shown.map((w) => (
         <div key={w.path} className="tt-mproj-wt">

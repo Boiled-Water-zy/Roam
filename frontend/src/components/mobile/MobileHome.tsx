@@ -124,14 +124,17 @@ export default function MobileHome({ last, onOpen, onNav, onNewTask, onOpenProje
   return (
     <div className="tt-mhome">
       <AppUpdateBanner />
-      <header>
-        <div className="top">
-          <small>{new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', weekday: 'long' })}{host?.hostname ? ` · ${host.hostname}` : ''}</small>
+      <header className="tt-pagehead tt-mobile-pagehead">
+        <div className="ttl">
+          <div className="kicker">{new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', weekday: 'long' })}{host?.hostname ? ` · ${host.hostname}` : ''}</div>
+          <h2>{headline}</h2>
+          <p>{t('mobile.home.lead')}</p>
+        </div>
+        <div className="acts">
           <button type="button" className="bell" aria-label={t('nav.inbox')} onClick={() => onNav('inbox')}>
             {ICONS.inbox}{unread > 0 && <i>{unread}</i>}
           </button>
         </div>
-        <h1>{headline}</h1>
       </header>
 
       <div className="tiles">

@@ -52,7 +52,7 @@ export default function InstallPage({ onBack }: { onBack?: () => void }) {
   return (
     <div className="tt-install">
       {phone && onBack
-        ? <div className="tt-mproj-head"><button type="button" className="tt-act" onClick={onBack}><ChevronLeft size={14} />{t('nav.me')}</button><b>{t('install.pageTitle')}</b><span /></div>
+        ? <header className="tt-pagehead tt-mobile-pagehead tt-mobile-detailhead"><button type="button" className="tt-mobile-back" onClick={onBack} aria-label={t('common.back')}><ChevronLeft size={20} /></button><div className="ttl"><div className="kicker">{t('nav.me')}</div><h2>{t('install.pageTitle')}</h2><p>{t('install.pageLead')}</p></div></header>
         : <div className="tt-pagehead" style={{ marginBottom: 'var(--sp-4)' }}><div className="ttl"><div className="kicker">{t('install.eyebrow')}</div><h2>{t('install.pageTitle')}</h2><p>{t('install.pageLead')}</p></div></div>}
 
       {!phone && (

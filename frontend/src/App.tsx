@@ -1262,23 +1262,16 @@ export default function App() {
         )
       })()}
 
-      {/* 底栏 6 格 + 会话坞（13 §4.1/§4.2）：概览/项目/文件/浏览器/手机 + 更多。
-          360px 下每格 60px，标签 11px 单行截断——所以格数到此为止，再加就只剩图标了。
-          「更多」sheet 仍分「工具 / 账户」两段：退出登录和功能页并排时误触代价差了几个
-          数量级，所以它收在账户行的二级里。*/}
+      {/* 手机三项导航与页面内容保持固定的底部安全距离。 */}
       {isMobile && (
-        <div style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          zIndex: 'var(--z-nav)' as unknown as number, paddingBottom: 'var(--safe-b)',
-          background: 'var(--bg-container)', borderTop: '1px solid var(--border)',
-        }}>
+        <div className="tt-bottomnav">
         {offline && <div className="tt-offline">{t('mobile.offline')}</div>}
-        <nav style={{ display: 'flex' }}>
+        <nav aria-label={t('nav.home')}>
           {MOBILE_NAV_KEYS.map((key) => {
             const n = NAV.find((x) => x.key === key)!
             return (
-              <button key={n.key} onClick={() => go(n.key)} className="tt-bottomnav-btn"
-                style={{ color: tab === n.key ? 'var(--accent)' : 'var(--text-dim)' }}>
+              <button key={n.key} type="button" onClick={() => go(n.key)} className="tt-bottomnav-btn"
+                aria-current={tab === n.key ? 'page' : undefined}>
                 <span className="ic">{ICONS[n.key]}{n.key === 'home' && waitingTotal > 0 && <i className="bd">{waitingTotal}</i>}</span><span>{t(n.labelKey)}</span>
               </button>
             )
