@@ -1,4 +1,5 @@
 import { isAgentKind, useAgentKinds, type AgentKind } from './agent-kind'
+import { agentCommand } from './agent-command'
 // ttmux Web 控制台 — React + Vite + Antd（统一深色主题）
 // 布局（见 docs/design/web/01-overview.md）：
 //   电脑 ≥1200 → 三栏：导航 Sider | 列表(页面) | 终端面板(常驻, 多标签)
@@ -791,8 +792,8 @@ export default function App() {
     ? (isLooseTask(activeTask) ? sessionLabel(looseSessionOf(activeTask)) : tree.projects.flatMap((p) => p.tasks).find((x) => x.key === activeTask)?.name || activeTask.split('/').pop() || '')
     : ''
   const onTreeProject = (key: string) => go('projects/' + encodeURIComponent(key))
-  // 标签条「新建」：在当前任务的 worktree 里开 shell / Claude / Codex，名字与项目页「新开命令行」同款后缀
-  const newTerminalInTask = async (kind: 'shell' | 'claude' | 'codex' = 'shell', keyArg?: TaskKey) => {
+  // 标签条「新建」：在当前任务的 worktree 里开 shell 或 agent，名字与项目页「新开命令行」同款后缀
+  const newTerminalInTask = async (kind: 'shell' | AgentKind = 'shell', keyArg?: TaskKey) => {
     const key = keyArg ?? activeTaskRef.current
     const dir = key ? (taskPathOf(tree, key) || sessionProject(looseSessionOf(key))?.dir || '') : ''
     // 名字是展示名（@roam_name），后端另发 id：所以前缀用任务的展示名，不是那串 2026-… 的会话 id
@@ -800,9 +801,9 @@ export default function App() {
     await newTerminalAt(kind, dir, (first && sessionLabel(first)) || 'shell', key || undefined)
   }
   // 手机没有树，worktree 路径直接给：目录就是目录，不经 taskPathOf 那趟查表（查不到会落到 ~）
-  const newTerminalAt = async (kind: 'shell' | 'claude' | 'codex', dir: string, baseArg?: string, key?: TaskKey) => {
+  const newTerminalAt = async (kind: 'shell' | AgentKind, dir: string, baseArg?: string, key?: TaskKey) => {
     const base = baseArg || (dir ? dir.split('/').pop() : '') || 'shell'
-    const suffix = kind === 'shell' ? 'sh' : kind === 'claude' ? 'cc' : 'cx'
+    const suffix = ({ shell: 'sh', claude: 'cc', codex: 'cx', pi: 'pi', opencode: 'oc' } as const)[kind]
     let name = `${base}-${suffix}`
     const taken = new Set(sessList.map((s) => s.label || s.name))
     for (let i = 2; taken.has(name); i++) name = `${base}-${suffix}${i}`
@@ -810,7 +811,7 @@ export default function App() {
       const res = await api('POST', '/sessions', dir ? { name, dir } : { name })
       const actual = res?.name || name
       if (kind !== 'shell') {
-        const cmd = kind === 'claude' ? (prefs.claudeCommand || 'claude') : (prefs.codexCommand || 'codex')
+        const cmd = agentCommand(kind, prefs)
         await api('POST', '/tasks/_/send', { sess: actual, msg: cmd })
       }
       openTerm(actual, key)
@@ -924,7 +925,7 @@ export default function App() {
       onReorder={reorderTerm}
       onNeedsInput={setMobileWaiting}
       onOpenSession={(n) => openTerm(n)}
-      onNew={taskView ? { terminal: () => { void newTerminalInTask('shell') }, claude: () => { void newTerminalInTask('claude') }, codex: () => { void newTerminalInTask('codex') }, taskLabel: activeTaskLabel } : undefined}
+      onNew={taskView ? { terminal: () => { void newTerminalInTask('shell') }, claude: () => { void newTerminalInTask('claude') }, codex: () => { void newTerminalInTask('codex') }, pi: () => { void newTerminalInTask('pi') }, opencode: () => { void newTerminalInTask('opencode') }, taskLabel: activeTaskLabel } : undefined}
       // 任务视图里对话点路径 / Git 都落到右栏三面板；手机与 Page 态退回 TerminalPane 自己的二级页
       onOpenFile={taskView ? (path, line) => openFileTab(path, line) : undefined}
       onOpenGit={taskView ? () => showInspector('git') : undefined}
