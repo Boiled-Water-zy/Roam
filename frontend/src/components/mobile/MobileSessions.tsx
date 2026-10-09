@@ -10,12 +10,8 @@ import { MobileSheet, SheetRow } from '../shell/MobileSheet'
 import { BranchIcon } from '../git/parts'
 import { useBackDismiss } from '../shell/useBackDismiss'
 import MobileProjectDetail from './MobileProjectDetail'
-
-export type OverviewItem = {
-  name: string; label: string; lastActivity: number; dormant: boolean
-  projectKey?: string; project?: string; projectDir?: string; worktree?: string; branch?: string
-  agent?: 'claude' | 'codex' | ''; running: boolean; waiting: boolean; tail?: string
-}
+import { readMobileOverview, writeMobileOverview, type OverviewItem } from './mobile-overview-cache'
+export type { OverviewItem } from './mobile-overview-cache'
 
 function ago(sec: number | undefined, t: (k: string) => string): string {
   if (!sec) return ''
@@ -34,7 +30,7 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
   onNewInWorktree: (kind: 'claude' | 'codex' | 'shell', path: string) => void
 }) {
   const { t } = useI18n()
-  const [items, setItems] = useState<OverviewItem[] | null>(null)
+  const [items, setItems] = useState<OverviewItem[] | null>(() => readMobileOverview())
   const [q, setQ] = useState('')
   // 筛选药丸 + 每组先露 5 条（Lody 手机端的做法）：十几个会话时一屏能看到所有项目，而不是被第一个项目占满
   const [filter, setFilter] = useState<'all' | 'waiting' | 'running' | 'idle'>('all')
@@ -51,7 +47,7 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
   const lpCancel = () => clearTimeout(lp.current.timer)
   const [renaming, setRenaming] = useState<OverviewItem | null>(null)
   const [renameVal, setRenameVal] = useState('')
-  const reload = () => api('GET', '/sessions/overview').then((r) => setItems(r.data.items || [])).catch(() => {})
+  const reload = () => api('GET', '/sessions/overview').then((r) => setItems(writeMobileOverview(r.data.items || []))).catch(() => {})
   const interrupt = async (s: OverviewItem) => {
     try { await api('POST', `/sessions/${encodeURIComponent(s.name)}/keys`, { keys: ['Escape'] }); message.success(t('mobile.interrupted')) }
     catch (e: any) { message.error(e.message) }
@@ -68,7 +64,7 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
   }
   useEffect(() => {
     let stop = false
-    const load = () => api('GET', '/sessions/overview').then((r) => { if (!stop) setItems(r.data.items || []) }).catch(() => { if (!stop) setItems((c) => c || []) })
+    const load = () => api('GET', '/sessions/overview').then((r) => { if (!stop) setItems(writeMobileOverview(r.data.items || [])) }).catch(() => { if (!stop) setItems((c) => c || []) })
     load()
     const i = setInterval(load, 5000)
     return () => { stop = true; clearInterval(i) }

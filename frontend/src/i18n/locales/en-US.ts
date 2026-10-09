@@ -2071,6 +2071,8 @@ const enUS = {
   'mobile.home.running': 'Running',
   'mobile.home.noneRunning': 'Nothing is running',
   'mobile.home.machine': 'Machine',
+  'mobile.home.machineLoading': 'Loading host status…',
+  'mobile.home.machineUnavailable': 'Host status is temporarily unavailable',
   'mobile.home.mem': 'Memory',
   'mobile.home.memFree': '{gb} G free',
   'mobile.home.swap': 'Swap',

@@ -134,7 +134,12 @@ export default function TerminalPane(props: {
     }
   }
   const activeNeedsInput = !!(active && termNeedsInput[active])
-  const dot = activeNeedsInput ? 'var(--warn)' : st === 'connected' ? 'var(--ok)' : st === 'connecting' ? 'var(--warn)' : 'var(--danger)'
+  const dotOf = (name: string) => {
+    if (termNeedsInput[name]) return 'var(--warn)'
+    if (statusMap[name] === 'connected' || claudeMap[name]?.running || codexMap[name]?.running) return 'var(--ok)'
+    return statusMap[name] === 'connecting' ? 'var(--warn)' : 'var(--danger)'
+  }
+  const dot = active ? dotOf(active) : 'var(--danger)'
   // 灵动岛的「活着」判据：有 Agent 在跑。会话只是连着（st==='connected'）不算——
   // 那是个静态事实，让点一直呼吸等于把呼吸这个信号用废了。
   const activeAgentLive = !!(active && (agentKinds[active] || claudeMap[active]?.running || codexMap[active]?.running))
@@ -617,9 +622,7 @@ export default function TerminalPane(props: {
 
   // ── 会话（终端）各部件抽成局部 JSX：左侧停靠走 <FileWorkspace> 的槽位，右侧抽屉走原地布局，二者共用同一份 ──
   // 标签条是单行横向滑动：窄栏/手机上开的会话一多，当前标签就滑出视口了 → 切换后把它带回来。
-  // 会话状态点：等待确认=琥珀，已连接=绿，连接中=琥珀，断开=红（与列表页同一套色）
-  const dotOf = (name: string) => termNeedsInput[name] ? 'var(--warn)'
-    : statusMap[name] === 'connected' ? 'var(--ok)' : statusMap[name] === 'connecting' ? 'var(--warn)' : 'var(--danger)'
+  // Agent 正在工作时仍可通过聊天继续交互；此时终端 WS 断开不代表会话不可用。
   const statusDot = (color: string, size = 7) => (
     <i style={{ width: size, height: size, borderRadius: '50%', flex: `0 0 ${size}px`, background: color, boxShadow: `0 0 0 3px ${color}26` }} />
   )

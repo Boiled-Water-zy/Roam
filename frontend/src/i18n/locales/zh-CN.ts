@@ -2077,6 +2077,8 @@ const zhCN = {
   'mobile.home.running': '正在跑',
   'mobile.home.noneRunning': '没有会话在跑',
   'mobile.home.machine': '机器',
+  'mobile.home.machineLoading': '正在读取主机状态…',
+  'mobile.home.machineUnavailable': '主机状态暂不可用',
   'mobile.home.mem': '内存',
   'mobile.home.memFree': '还剩 {gb} G',
   'mobile.home.swap': '交换分区',

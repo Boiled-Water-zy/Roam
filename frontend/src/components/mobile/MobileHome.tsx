@@ -5,10 +5,10 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { App as AntApp, Spin } from 'antd'
 import { api } from '../../api'
 import { useI18n } from '../../i18n'
-import { AgentLogo, CheckIcon, ChevronRight, CloseIcon, FolderIcon, PlusIcon, SwarmIcon, TabsIcon, TerminalIcon } from '../../icons'
+import { AgentLogo, CheckIcon, ChevronRight, CloseIcon, TerminalIcon } from '../../icons'
 import { BranchIcon } from '../git/parts'
 import { ICONS } from '../nav-icons'
-import type { OverviewItem } from './MobileSessions'
+import { readMobileOverview, writeMobileOverview, type OverviewItem } from './mobile-overview-cache'
 import { AppUpdateBanner } from './app-update'
 
 const HOST_MONITOR = 'roam.host-monitor'
@@ -39,28 +39,31 @@ export default function MobileHome({ last, onOpen, onNav, onNewTask, onOpenProje
 }) {
   const { t } = useI18n()
   const { message } = AntApp.useApp()
-  const [items, setItems] = useState<Item[] | null>(null)
+  const [items, setItems] = useState<Item[] | null>(() => readMobileOverview())
   const [inbox, setInbox] = useState<Inbox[]>([])
   const [unread, setUnread] = useState(0)
   const [projects, setProjects] = useState<Proj[]>([])
   const [host, setHost] = useState<Host | null>(null)
+  const [hostStatus, setHostStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [acting, setActing] = useState('')
 
-  const loadLive = useCallback(() => api('GET', '/sessions/overview').then((r) => setItems(r.data.items || [])).catch(() => setItems((c) => c || [])), [])
+  const loadLive = useCallback(() => api('GET', '/sessions/overview').then((r) => setItems(writeMobileOverview(r.data.items || []))).catch(() => setItems((c) => c || [])), [])
   useEffect(() => {
     let stop = false
     const slow = () => {
       api('GET', '/inbox?limit=40').then((r) => { if (!stop) { setInbox(r.data.items || []); setUnread(r.data.badge || 0) } }).catch(() => {})
       api('GET', '/projects').then((r) => { if (!stop) setProjects(r.data.projects || []) }).catch(() => {})
       api('POST', `/plugins/${encodeURIComponent(HOST_MONITOR)}/run`, { command: 'host-monitor.stats', args: {} }).then((d) => {
-        if (stop || !d?.memory) return
+        if (stop) return
+        if (!d?.memory) { setHostStatus((s) => s === 'ready' ? s : 'unavailable'); return }
         const root = (d.disks || []).find((x: any) => x.mount === '/') || (d.disks || [])[0]
         setHost({
           hostname: d.host?.hostname || '', cpu: d.cpu?.usagePercent || 0, temp: d.cpu?.tempC || 0, cores: d.cpu?.cores || 1, load: d.host?.load1 || 0,
           mem: d.memory.usagePercent || 0, memFree: d.memory.available || 0,
           swap: d.memory.swapTotal ? (d.memory.swapUsed / d.memory.swapTotal) * 100 : 0, disk: root?.usagePercent || 0,
         })
-      }).catch(() => {})
+        setHostStatus('ready')
+      }).catch(() => { if (!stop) setHostStatus((s) => s === 'ready' ? s : 'unavailable') })
     }
     void loadLive(); slow()
     const a = setInterval(loadLive, 5000), b = setInterval(slow, 20000)
@@ -74,7 +77,6 @@ export default function MobileHome({ last, onOpen, onNav, onNewTask, onOpenProje
   const dayStart = new Date().setHours(0, 0, 0, 0) / 1000
   const doneToday = inbox.filter((x) => x.type === 'session.done' && x.at >= dayStart)
   const errors = inbox.filter((x) => x.type === 'session.error' && !x.read)
-  const recentDone = inbox.filter((x) => x.type === 'session.done').slice(0, 3)
 
   const toFinish = projects.filter((p) => p.unfinished > 0)
   const unfinished = toFinish.reduce((n, p) => n + p.unfinished, 0)
@@ -92,7 +94,7 @@ export default function MobileHome({ last, onOpen, onNav, onNewTask, onOpenProje
     try {
       await api('POST', `/sessions/${encodeURIComponent(s.name)}/keys`, { keys: [key] })
       message.success(t(key === 'Enter' ? 'mobile.home.allowed' : 'mobile.home.denied', { name: s.label }))
-      setItems((cur) => (cur || []).map((x) => (x.name === s.name ? { ...x, waiting: false } : x)))
+      setItems((cur) => writeMobileOverview((cur || []).map((x) => (x.name === s.name ? { ...x, waiting: false } : x))))
       setTimeout(() => { void loadLive() }, 1500)
     } catch (e: any) { message.error(e.message) } finally { setActing('') }
   }
@@ -144,6 +146,15 @@ export default function MobileHome({ last, onOpen, onNav, onNewTask, onOpenProje
         {tile(unfinished, t('mobile.home.unfinished'), '', 'sessions')}
       </div>
 
+      {section(t('mobile.home.machine'), null, null, host ? (
+        <div className="host">
+          {meter(t('mobile.home.mem'), host.mem, t('mobile.home.memFree', { gb: (host.memFree / 1073741824).toFixed(1) }))}
+          {meter(t('mobile.home.swap'), host.swap, `${Math.round(host.swap)}%`)}
+          {meter('CPU', host.cpu, `${Math.round(host.cpu)}% · ${t('mobile.home.load', { n: host.load.toFixed(1), cores: host.cores })}${host.temp ? ` · ${Math.round(host.temp)}°C` : ''}`)}
+          {meter(t('mobile.home.disk'), host.disk, `${Math.round(host.disk)}%`)}
+        </div>
+      ) : <div className="host-empty" role="status">{t(hostStatus === 'loading' ? 'mobile.home.machineLoading' : 'mobile.home.machineUnavailable')}</div>)}
+
       {lastItem && (
         <button type="button" className="resume" onClick={() => onOpen(lastItem.name)}>
           <span className="ic">{icon(lastItem)}</span>
@@ -182,7 +193,7 @@ export default function MobileHome({ last, onOpen, onNav, onNewTask, onOpenProje
         </button>
       )))}
 
-      {section(t('mobile.home.running'), running.length, () => onNav('sessions'), running.length ? running.slice(0, 5).map((s) => (
+      {section(t('mobile.home.running'), running.length, () => onNav('sessions'), running.length ? running.slice(0, 3).map((s) => (
         <button key={s.name} type="button" className="tt-msess-row" onClick={() => onOpen(s.name)}>
           <span className="ic">{icon(s)}</span>
           <span className="t">
@@ -196,7 +207,7 @@ export default function MobileHome({ last, onOpen, onNav, onNewTask, onOpenProje
 
       {busyProjects.length > 0 && section(t('nav.projects'), busyProjects.length, () => onNav('sessions'), (
         <div className="projs">
-          {busyProjects.slice(0, 6).map((p) => (
+          {busyProjects.slice(0, 4).map((p) => (
             <button key={p.key} type="button" onClick={() => onOpenProject(p)}>
               <span className="av">{p.name.slice(0, 1).toUpperCase()}</span>
               <span className="t">
@@ -212,29 +223,6 @@ export default function MobileHome({ last, onOpen, onNav, onNewTask, onOpenProje
         </div>
       ))}
 
-      {host && section(t('mobile.home.machine'), null, null, (
-        <div className="host">
-          {meter(t('mobile.home.mem'), host.mem, t('mobile.home.memFree', { gb: (host.memFree / 1073741824).toFixed(1) }))}
-          {meter(t('mobile.home.swap'), host.swap, `${Math.round(host.swap)}%`)}
-          {meter('CPU', host.cpu, `${Math.round(host.cpu)}% · ${t('mobile.home.load', { n: host.load.toFixed(1), cores: host.cores })}${host.temp ? ` · ${Math.round(host.temp)}°C` : ''}`)}
-          {meter(t('mobile.home.disk'), host.disk, `${Math.round(host.disk)}%`)}
-        </div>
-      ))}
-
-      {recentDone.length > 0 && section(t('inbox.done'), null, () => onNav('inbox'), recentDone.map((x) => (
-        <button key={x.id} type="button" className="tt-msess-row" onClick={() => onOpen(x.session)}>
-          <span className="ic"><CheckIcon size={14} /></span>
-          <span className="t"><b>{x.label}</b><span className="st"><span className="tail">{plain(x.body) || t('inbox.noSummary')}</span></span></span>
-          <em>{ago(x.at, t)}</em>
-        </button>
-      )))}
-
-      <div className="quick">
-        <button type="button" onClick={onNewTask}><PlusIcon size={18} /><span>{t('mobile.proj.newTask')}</span></button>
-        <button type="button" onClick={() => onNav('sessions')}><TabsIcon size={18} /><span>{t('project.allSessions')}</span></button>
-        <button type="button" onClick={() => onNav('swarm')}><SwarmIcon size={18} /><span>{t('nav.swarm')}</span></button>
-        <button type="button" onClick={() => onNav('files')}><FolderIcon size={18} /><span>{t('nav.files')}</span></button>
-      </div>
     </div>
   )
 }
