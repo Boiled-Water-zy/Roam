@@ -133,6 +133,33 @@ pre { background:var(--bg-container); border:1px solid var(--border-subtle); bor
 .phone .mini-bell { border:1px solid var(--accent-border); border-radius:var(--r-pill); padding:0 var(--sp-2); color:var(--accent); font-size:var(--fs-micro) }
 .phone .mini-headline { font-size:var(--fs-sm); font-weight:700; margin:var(--sp-2) 0 }
 .phone .mini-resume { border-color:var(--accent-border); background:var(--accent-soft) }
+/* Material 3 的字号、表面、形状与导航层级，沿用产品令牌。 */
+.phone .mini-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-3); margin:var(--sp-4) 0 }
+.phone .mini-stats div { min-height:72px; padding:var(--sp-3); border:0; border-radius:var(--r-card) }
+.phone .mini-stats div:first-child { background:var(--warn-soft) }
+.phone .mini-stats div:nth-child(2) { background:var(--ok-soft) }
+.phone .mini-stats b { font-size:var(--fs-title) }
+.phone .mini-stats span { font-size:var(--fs-meta) }
+.phone .mini-headline { font-size:var(--fs-lg); line-height:1.3; margin:var(--sp-1) 0 var(--sp-2) }
+.phone .mini-lead { color:var(--text-dim); font-size:var(--fs-meta) }
+.phone .mini-kicker { color:var(--accent); font-size:var(--fs-micro); font-weight:700; letter-spacing:.08em }
+.phone .mini-pagehead { padding:var(--sp-3) var(--sp-3) 0 }
+.phone .mini-pagehead b { display:block; font-size:var(--fs-lg); line-height:1.3; margin:var(--sp-1) 0 }
+.phone .mini-pagehead .mini-lead { display:block }
+.phone .mini-pagehead.with-action { display:flex; align-items:center; gap:var(--sp-2) }
+.phone .mini-pagehead.with-action > div { flex:1; min-width:0 }
+.phone .mini-pagehead em { font-style:normal; padding:var(--sp-2); border-radius:var(--r-pill); background:var(--accent-solid); color:#fff; font-size:var(--fs-micro) }
+.phone .body .sec { color:var(--text-bright); font-size:var(--fs-sm); font-weight:600; letter-spacing:0; margin:var(--sp-4) 0 var(--sp-2) }
+.phone .mini-search { border-radius:var(--r-pill); background:var(--bg-container) }
+.phone .mini-pills span { padding:var(--sp-2) }
+.phone .row, .phone .mini-project { border-radius:var(--r-card) }
+.phone .nav { min-height:52px; align-items:center; padding:var(--sp-2) }
+.phone .nav span { color:var(--text-dim); font-size:var(--fs-meta) }
+.phone .nav span b { width:40px; height:22px; border-radius:var(--r-pill); background:transparent; opacity:1 }
+.phone .nav span.on b { background:var(--accent-soft) }
+.phone .mini-settings { padding:var(--sp-2); border-radius:var(--r-card); background:var(--bg-container) }
+.phone .mini-settings .row { margin:0; border:0; background:transparent }
+.phone .mini-settings .row + .row { border-top:1px solid var(--border-subtle); border-radius:0 }
 </style>
 </head>
 <body>
@@ -254,13 +281,15 @@ pre { background:var(--bg-container); border:1px solid var(--border-subtle); bor
 
 <h2 id="s5">§5 信息架构：首页 · 会话 · 我 + 全屏会话</h2>
 <p>现行手机底栏三格：<b>首页 · 会话 · 我</b>。首页聚合需要处理的事、运行状态、项目与主机资源；通知入口在首页右上角；点会话列表中的项目标题进入 worktree 详情。会话以全屏覆盖层打开，胶囊头提供「需要你 + 最近」切换面板，没有桌面式的已打开标签。</p>
+<p>2026-10-09 按 <a href="https://developer.android.com/develop/ui/compose/designsystems/material3?hl=zh-cn">Material 3 官方设计体系</a>更新手机版排版：22px 页面标题、清晰的字号层级、两列状态卡、语义色表面、圆角分组和三项底栏选中胶囊。颜色、字号、间距与圆角仍取 Roami 令牌；实际实现见 <code>frontend/src/mobile-material.css</code>。</p>
 <div class="phones">
   <div>
     <div class="phone"><div class="cap"></div><div class="scr">
       <div class="mini-update"><b>App 有新版本 0.3.0</b><span>旧壳用手机浏览器下载安装</span></div>
-      <div class="top"><b>10月8日 · BLADEAI-ZY-G3-3590</b><span class="mini-bell">36</span></div>
+      <div class="top"><b>10月9日 · BLADEAI-ZY-G3-3590</b><span class="mini-bell">36</span></div>
       <div class="body">
         <div class="mini-headline">下午好，今天有 8 件事需要你</div>
+        <div class="mini-lead">会话、项目与机器状态一目了然</div>
         <div class="mini-stats"><div><b>0</b><span>等你</span></div><div><b>2</b><span>在跑</span></div><div><b>0</b><span>今天做完</span></div><div><b>10</b><span>待收尾</span></div></div>
         <div class="row mini-resume"><div class="t"><span>继续上次</span><b>sandbox-os-takeover</b></div></div>
         <div class="sec">需要你 · 4</div>
@@ -275,7 +304,7 @@ pre { background:var(--bg-container); border:1px solid var(--border-subtle); bor
   </div>
   <div>
     <div class="phone"><div class="cap"></div><div class="scr">
-      <div class="top"><b>会话</b><em>新会话</em></div>
+      <div class="mini-pagehead with-action"><div><span class="mini-kicker">工作进展</span><b>会话</b><span class="mini-lead">按项目查找和管理会话</span></div><em>新会话</em></div>
       <div class="body">
         <div class="mini-search">搜索会话、分支</div>
         <div class="mini-pills"><span class="on">全部 8</span><span>等你 3</span><span>运行 2</span><span>空闲 3</span></div>
@@ -293,7 +322,7 @@ pre { background:var(--bg-container); border:1px solid var(--border-subtle); bor
   </div>
   <div>
     <div class="phone"><div class="cap"></div><div class="scr">
-      <div class="top"><b>blade-agent</b><em>开任务</em></div>
+      <div class="mini-pagehead with-action"><div><span class="mini-kicker">会话</span><b>blade-agent</b></div><em>开任务</em></div>
       <div class="body">
         <div class="sec">正在使用的工作树</div>
         <div class="mini-project"><b>feat/agent-typing</b><span>领先 2 · 改动 3</span><div class="row hot"><div class="t"><b>调研智能体吐字</b><span>等你 · git push</span></div></div><div class="mini-acts"><span>Claude</span><span>Codex</span><span>终端</span><span>改动</span></div></div>
@@ -303,6 +332,19 @@ pre { background:var(--bg-container); border:1px solid var(--border-subtle); bor
       <div class="nav"><span><b class="bd"></b>首页</span><span class="on"><b></b>会话</span><span><b></b>我</span></div>
     </div></div>
     <div class="cap2"><b>项目详情</b>：从会话列表的项目标题进入。展示工作树状态、所挂会话；可以在指定工作树启动 Claude、Codex、终端或任务，Git 变更打开手机次级页。</div>
+  </div>
+  <div>
+    <div class="phone"><div class="cap"></div><div class="scr">
+      <div class="mini-pagehead"><span class="mini-kicker">个人与设备</span><b>我</b><span class="mini-lead">管理机器、通知和常用工具</span></div>
+      <div class="body">
+        <div class="mini-settings"><div class="row"><div class="t"><b>搜索</b><span>查找会话、项目和文件</span></div></div><div class="row"><div class="t"><b>新建项目</b></div></div></div>
+        <div class="sec">机器</div><div class="mini-settings"><div class="row"><div class="t"><b>BLADEAI-ZY-G3-3590</b><span>当前机器 · 4 个会话</span></div></div></div>
+        <div class="sec">通知</div><div class="mini-settings"><div class="row"><div class="t"><b>安装到手机</b></div></div><div class="row"><div class="t"><b>推送通知</b><span>等待、完成与错误提醒</span></div></div></div>
+        <div class="sec">工具</div><div class="mini-settings"><div class="row"><div class="t"><b>文件</b></div></div><div class="row"><div class="t"><b>浏览器</b></div></div><div class="row"><div class="t"><b>手机</b></div></div></div>
+      </div>
+      <div class="nav"><span><b></b>首页</span><span><b></b>会话</span><span class="on"><b></b>我</span></div>
+    </div></div>
+    <div class="cap2"><b>我</b>：搜索、项目、机器、通知、工具和账户按用途分组；设置项使用统一行高和表面层级。</div>
   </div>
   <div>
     <div class="phone"><div class="cap"></div><div class="scr">
