@@ -18,42 +18,40 @@ import { useEdgeSwipe } from './shell/edge-swipe'
 import { useBackDismiss } from './shell/useBackDismiss'
 import { ChevronLeft } from '../icons'
 
-export default function MobileSubPage({ title, onBack, layer = 'page', children }: {
+export default function MobileSubPage({ title, onBack, action, manageHistory = true, layer = 'page', keepBottomNav = false, children }: {
   title?: ReactNode
   onBack: () => void
+  action?: { label: string; icon: ReactNode; onClick: () => void }
+  manageHistory?: boolean
   /** 'session' = 从会话全屏覆盖层里唤起（Git / 文件） */
   layer?: 'page' | 'session'
+  keepBottomNav?: boolean
   children: ReactNode
 }) {
   const { t } = useI18n()
-  useBackDismiss(true, onBack)
+  useBackDismiss(manageHistory, onBack)
   const rootRef = useRef<HTMLDivElement>(null)
   useEdgeSwipe(rootRef, { onBack })
 
   const node = (
     <div ref={rootRef} style={{
-      position: 'fixed', inset: 0, background: 'var(--bg-base)',
+      position: 'fixed', inset: 0,
+      bottom: keepBottomNav ? 'calc(var(--mobile-nav-h, calc(var(--tap) + var(--sp-4))) + var(--safe-b))' : 0,
+      background: 'var(--bg-base)',
       zIndex: `var(${layer === 'session' ? '--z-session-sub' : '--z-subpage'})` as unknown as number,
       display: 'flex', flexDirection: 'column',
       paddingTop: 'var(--safe-t)', paddingLeft: 'var(--safe-l)', paddingRight: 'var(--safe-r)',
-      paddingBottom: 'max(var(--kb), var(--safe-b))',
+      paddingBottom: keepBottomNav
+        ? 'max(0px, calc(var(--kb) - var(--mobile-nav-h, calc(var(--tap) + var(--sp-4))) - var(--safe-b)))'
+        : 'max(var(--kb), var(--safe-b))',
     }}>
       {title !== undefined && (
-        <div style={{
-          flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 2,
-          padding: 'var(--sp-1)', borderBottom: '1px solid var(--border)', background: 'var(--bg-container)',
-        }}>
-          <button onClick={onBack} title={t('common.back')} aria-label={t('common.back')} style={{
-            width: 'var(--tap)', height: 'var(--tap)', flex: '0 0 auto',
-            border: 0, background: 'none', color: 'var(--text-bright)',
-            display: 'grid', placeItems: 'center', cursor: 'pointer',
-          }}>
-            <ChevronLeft size={18} />
+        <div className="tt-mobile-subpage-head">
+          <button type="button" onClick={onBack} aria-label={t('common.back')}>
+            <ChevronLeft size={20} />
           </button>
-          <div style={{
-            flex: 1, minWidth: 0, fontSize: 'var(--fs-body)', fontWeight: 600,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>{title}</div>
+          <strong>{title}</strong>
+          {action && <button type="button" onClick={action.onClick} aria-label={action.label}>{action.icon}</button>}
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

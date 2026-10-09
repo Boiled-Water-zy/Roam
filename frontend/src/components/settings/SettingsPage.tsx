@@ -16,6 +16,7 @@ import { useThemeMode } from '../../theme'
 import { api } from '../../api'
 import { useClusterNodes, useCurrentNodeId } from '../cluster/node-url'
 import MobileSubPage from '../MobileSubPage'
+import MobilePageSearch from '../mobile/MobilePageSearch'
 import { SettingRow } from './SettingRow'
 import { buildSettings, itemText, rowCount, type SettingsModel, type SettingsPageDef } from './registry'
 
@@ -71,7 +72,13 @@ function PaneHead({ page, model, compact }: { page: SettingsPageDef; model: Sett
   )
 }
 
-export default function SettingsPage({ sub, onNav, onLogout }: { sub?: string; onNav?: (route: string) => void; onLogout?: () => void }) {
+export default function SettingsPage({ sub, onNav, onLogout, onInstall, fullscreen }: {
+  sub?: string
+  onNav?: (route: string) => void
+  onLogout?: () => void
+  onInstall?: () => void
+  fullscreen?: { active: boolean; toggle: () => void }
+}) {
   const { t, locale, setLocale } = useI18n()
   const { message, modal } = AntApp.useApp()
   const { mode, setMode } = useThemeMode()
@@ -183,24 +190,34 @@ export default function SettingsPage({ sub, onNav, onLogout }: { sub?: string; o
     const openSub = sub ? model.pages[routed] : null
     return (
       <div className="tt-set">
-        {head}
+        <div className="tt-set-mobile-head">
+          <MobilePageSearch inputRef={searchRef} value={q} onChange={setQ}
+            placeholder={t('set.searchPlaceholder')} resultCount={query ? t('set.hitCount', { n: totalHits }) : undefined} />
+        </div>
         {query ? results : (
           <div className="tt-set-catlist">
+            {onInstall && <>
+              <div className="tt-set-sec">{t('mobile.settings.app')}</div>
+              <button type="button" className="tt-set-cat" onClick={onInstall}><span>{t('install.meRow')}</span><Chevron open={false} /></button>
+              {fullscreen && <button type="button" className="tt-set-cat" onClick={fullscreen.toggle}>
+                <span>{t(fullscreen.active ? 'common.exitFullscreen' : 'mobile.fullscreenHideStatus')}</span><Chevron open={false} />
+              </button>}
+            </>}
             {model.nodes.map((n, i) => {
               if (n.kind === 'section') return <div key={i} className="tt-set-sec">{n.title}</div>
               const ids = n.kind === 'leaf' ? [n.page] : n.kids
               return ids.map((id) => (
                 <button key={id} type="button" className="tt-set-cat" onClick={() => go(id)}>
                   <span>{model.pages[id].name}</span>
-                  {rowCount(model.pages[id]) > 0 && <span className="n">{rowCount(model.pages[id])}</span>}
                   <Chevron open={false} />
                 </button>
               ))
             })}
+            <button type="button" className="tt-set-cat" onClick={showJson}><span>{t('set.jsonButton')}</span><Chevron open={false} /></button>
           </div>
         )}
         {openSub && (
-          <MobileSubPage title={openSub.name} onBack={() => (onNav ? onNav('settings') : (location.hash = '#/settings'))}>
+          <MobileSubPage title={openSub.name} onBack={() => (onNav ? onNav('settings') : (location.hash = '#/settings'))} manageHistory={false} keepBottomNav>
             <div className="tt-set-pane scroll">
               <PaneHead page={openSub} model={model} compact />
               <div className="rows">{openSub.items.map((it) => <SettingRow key={it.id} item={it} />)}</div>

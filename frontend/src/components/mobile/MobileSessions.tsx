@@ -1,15 +1,16 @@
-// 手机「会话」页（24 稿 §5）：按项目分组的会话列表，顶上钉「需要你」。
+// 手机「项目」页：按项目分组的会话列表。
 // 数据只吃一条 GET /sessions/overview（会话 + 归属 + 探测循环的活状态），5s 一轮——
 // 桌面树那三条原料手机上不齐（worktree 那趟被省了），拿来画只会全成散会话。
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Input, Modal, Spin, App as AntApp } from 'antd'
 import { api } from '../../api'
 import { useI18n } from '../../i18n'
-import { AgentLogo, ChevronRight, CloseIcon, PencilIcon, SearchIcon, StopIcon, SwarmIcon, TerminalIcon, PlusIcon } from '../../icons'
+import { AgentLogo, ChevronRight, CloseIcon, PencilIcon, StopIcon, SwarmIcon, TerminalIcon, PlusIcon } from '../../icons'
 import { MobileSheet, SheetRow } from '../shell/MobileSheet'
 import { BranchIcon } from '../git/parts'
-import { useBackDismiss } from '../shell/useBackDismiss'
 import MobileProjectDetail from './MobileProjectDetail'
+import MobilePageSearch from './MobilePageSearch'
+import MobileSubPage from '../MobileSubPage'
 import { readMobileOverview, writeMobileOverview, type OverviewItem } from './mobile-overview-cache'
 export type { OverviewItem } from './mobile-overview-cache'
 
@@ -31,13 +32,13 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
 }) {
   const { t } = useI18n()
   const [items, setItems] = useState<OverviewItem[] | null>(() => readMobileOverview())
+  const [loadError, setLoadError] = useState(false)
   const [q, setQ] = useState('')
   // 筛选药丸 + 每组先露 5 条（Lody 手机端的做法）：十几个会话时一屏能看到所有项目，而不是被第一个项目占满
   const [filter, setFilter] = useState<'all' | 'waiting' | 'running' | 'idle'>('all')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   // 点开的项目（worktree 视图）；安卓返回手势退回列表
   const [cur, setCur] = useState<{ name: string; dir: string } | null>(null)
-  useBackDismiss(!!cur, () => setCur(null))
   useEffect(() => { if (openProject) setCur({ name: openProject.name, dir: openProject.dir }) }, [openProject?.at]) // eslint-disable-line react-hooks/exhaustive-deps
   // 长按一行：改名 / 中断 / 关闭（24 稿 §5 会话列表）
   const { message, modal } = AntApp.useApp()
@@ -47,7 +48,7 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
   const lpCancel = () => clearTimeout(lp.current.timer)
   const [renaming, setRenaming] = useState<OverviewItem | null>(null)
   const [renameVal, setRenameVal] = useState('')
-  const reload = () => api('GET', '/sessions/overview').then((r) => setItems(writeMobileOverview(r.data.items || []))).catch(() => {})
+  const reload = () => api('GET', '/sessions/overview').then((r) => { setItems(writeMobileOverview(r.data.items || [])); setLoadError(false) }).catch(() => { setLoadError(true); setItems((cur) => cur || []) })
   const interrupt = async (s: OverviewItem) => {
     try { await api('POST', `/sessions/${encodeURIComponent(s.name)}/keys`, { keys: ['Escape'] }); message.success(t('mobile.interrupted')) }
     catch (e: any) { message.error(e.message) }
@@ -64,7 +65,7 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
   }
   useEffect(() => {
     let stop = false
-    const load = () => api('GET', '/sessions/overview').then((r) => { if (!stop) setItems(writeMobileOverview(r.data.items || [])) }).catch(() => { if (!stop) setItems((c) => c || []) })
+    const load = () => api('GET', '/sessions/overview').then((r) => { if (!stop) { setItems(writeMobileOverview(r.data.items || [])); setLoadError(false) } }).catch(() => { if (!stop) { setLoadError(true); setItems((c) => c || []) } })
     load()
     const i = setInterval(load, 5000)
     return () => { stop = true; clearInterval(i) }
@@ -110,7 +111,6 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
     // 散会话垫底
     return Array.from(by.entries()).sort((a, b) => (a[0] === '' ? 1 : 0) - (b[0] === '' ? 1 : 0)).map(([, g]) => g)
   }, [items, needle, filter]) // eslint-disable-line react-hooks/exhaustive-deps
-  const needs = useMemo(() => (items || []).filter((s) => s.waiting && hit(s)), [items, needle, filter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const status = (s: OverviewItem) => s.dormant ? t('mobile.st.dormant') : s.waiting ? t('mobile.st.waiting') : s.running ? t('mobile.st.running') : t('mobile.st.idle')
   const row = (s: OverviewItem, sub = false) => (
@@ -155,13 +155,17 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
   }
 
   if (items === null) return <div style={{ display: 'grid', placeItems: 'center', height: '100%' }}><Spin /></div>
-  if (cur) return <MobileProjectDetail name={cur.name} dir={cur.dir} onBack={() => setCur(null)} onOpenSession={onOpen} onNewInWorktree={onNewInWorktree} onNewTask={onNewTask} />
+  if (cur) return <MobileSubPage title={cur.name} onBack={() => setCur(null)}
+    action={{ label: t('mobile.proj.newTask'), icon: <PlusIcon size={20} />, onClick: () => onNewTask(cur.dir) }}>
+    <MobileProjectDetail dir={cur.dir} onOpenSession={onOpen} onNewInWorktree={onNewInWorktree} />
+  </MobileSubPage>
   return (
     <div className="tt-msess">
+      {loadError && <div className="tt-data-error" role="alert">{t('mobile.overviewLoadFailed')} <button type="button" className="tt-act" onClick={() => void reload()}>{t('inbox.retry')}</button></div>}
       <header className="tt-pagehead tt-mobile-pagehead">
         <div className="ttl">
           <div className="kicker">{t('mobile.sessions.kicker')}</div>
-          <h2>{t('nav.sessions')}</h2>
+          <h2>{t('nav.projects')}</h2>
           <p>{t('mobile.sessions.lead')}</p>
         </div>
         <div className="acts">
@@ -169,7 +173,7 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
         </div>
       </header>
       <div className="tt-msess-head">
-        <Input allowClear prefix={<SearchIcon size={14} />} placeholder={t('mobile.searchSessions')} value={q} onChange={(e) => setQ(e.target.value)} />
+        <MobilePageSearch value={q} onChange={setQ} placeholder={t('mobile.searchSessions')} />
       </div>
       <div className="tt-msess-pills">
         {(['all', 'waiting', 'running', 'idle'] as const).map((k) => {
@@ -177,9 +181,6 @@ export default function MobileSessions({ onOpen, onNewTask, onNewInWorktree, ope
           return <button key={k} type="button" className={`tt-pill${filter === k ? ' on' : ''}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>{t(k === 'all' ? 'mobile.filter.all' : 'mobile.st.' + k)}<span>{n}</span></button>
         })}
       </div>
-      {!needle && filter === 'all' && needs.length > 0 && (
-        <section className="tt-msess-sec hot"><h3>{t('inbox.waiting')} <span>{needs.length}</span></h3>{needs.map((s) => row(s))}</section>
-      )}
       {groups.map((g, i) => (
         <section key={i} className="tt-msess-sec">
           {g.dir
