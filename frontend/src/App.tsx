@@ -977,7 +977,7 @@ export default function App() {
       onInstall={() => go('install')} fullscreen={isMobile && fsSupported ? { active: isFs, toggle: toggleFs } : undefined} />,
     hub: <HubPage />,
     plugins: <PluginsPanel initialId={pluginSub || undefined} />,
-    home: <MobileHome last={active} onOpen={(n) => openTerm(n)} onNav={(k) => go(k)}
+    home: <MobileHome key={curNodeId || ''} last={active} onOpen={(n) => openTerm(n)} onNav={(k) => go(k)}
       onOpenProject={(p) => { setMobileProject({ name: p.name, dir: p.dir, at: Date.now() }); go('projects') }}
     />,
     install: isMobile ? <MobileSubPage title={t('install.pageTitle')} onBack={() => go('settings')} manageHistory={false} keepBottomNav><InstallPage /></MobileSubPage> : <InstallPage />,
@@ -1238,14 +1238,14 @@ export default function App() {
       )}
       {/* 开任务 / 新项目两个弹层桌面手机都要有：原来挂在 Sider 里，手机没有 Sider，点了没反应 */}
       {/* 开任务（照 Orca 的「创建工作树」框）：顶上先选项目，下面就是项目主页那个 composer */}
-      <Modal open={!!newTaskDir} footer={null} width={860} destroyOnClose onCancel={() => setNewTaskDir(null)} title={t('tree.newTask')}>
+      <Modal className="tt-newtask-modal" open={!!newTaskDir} footer={null} width={860} destroyOnClose onCancel={() => setNewTaskDir(null)} title={t('tree.newTask')}>
         {newTaskDir && (
           <>
             <div className="tt-lbl">{t('tree.projectField')}</div>
-            <Select value={newTaskDir} onChange={(v) => setNewTaskDir(v)} style={{ width: '100%', marginBottom: 12 }}
-              options={treeSrc.projects.map((p: any) => ({ value: p.dir, label: <span>{p.name} <span style={{ color: 'var(--text-dimmer)', fontFamily: 'var(--mono)', fontSize: 'var(--fs-micro)', marginLeft: 8 }}>{p.dir}</span></span> }))} />
+            <Select value={newTaskDir} onChange={(v) => setNewTaskDir(v)} style={{ width: '100%', marginBottom: 'var(--sp-3)' }}
+              options={treeSrc.projects.map((p: any) => ({ value: p.dir, label: isMobile ? p.name : <span>{p.name} <span style={{ color: 'var(--text-dimmer)', fontFamily: 'var(--mono)', fontSize: 'var(--fs-micro)', marginLeft: 8 }}>{p.dir}</span></span> }))} />
             <TaskComposer key={newTaskDir} dir={newTaskDir} isGit={treeSrc.projects.find((p: any) => p.dir === newTaskDir)?.git !== false}
-              openTerm={openTerm} onCreated={() => setNewTaskDir(null)} autoFocus />
+              openTerm={openTerm} onCreated={() => setNewTaskDir(null)} autoFocus={!isMobile} />
           </>
         )}
       </Modal>
