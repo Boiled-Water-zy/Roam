@@ -1509,6 +1509,7 @@ const enUS = {
   'voice.hotkeyStop': 'Release or press {key} again to recognize · Esc to cancel',
   'voice.notConfigured': 'Configure speech recognition in Settings first',
   'voice.micDenied': 'Cannot access microphone, please check browser permissions',
+  'voice.micDeniedDetail': 'Cannot access microphone: {detail}; client {client}; secure context {secure}',
   'voice.insecureContext': 'Voice on mobile needs HTTPS; the browser blocks the microphone over plain HTTP',
   'voice.unsupported': 'This browser does not support recording (no microphone API)',
   'voice.starting': 'Starting…',

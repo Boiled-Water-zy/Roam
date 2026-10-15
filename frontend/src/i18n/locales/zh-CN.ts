@@ -1511,6 +1511,7 @@ const zhCN = {
   'voice.hotkeyStop': '松开或再按 {key} 识别 · Esc 取消',
   'voice.notConfigured': '请先在设置中配置语音识别',
   'voice.micDenied': '无法访问麦克风，请检查浏览器权限',
+  'voice.micDeniedDetail': '无法访问麦克风：{detail}；客户端 {client}；安全上下文 {secure}',
   'voice.insecureContext': '手机用语音需通过 HTTPS 访问；当前是 HTTP，浏览器已禁用麦克风',
   'voice.unsupported': '当前浏览器不支持录音（缺少麦克风 API）',
   'voice.starting': '正在开始…',

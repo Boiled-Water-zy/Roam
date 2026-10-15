@@ -98,10 +98,13 @@ export function VoiceInput({ accent, onResult, inline = false, toolbar = false, 
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
+    } catch (error) {
       pressedRef.current = false
       setPhase('idle')
-      message.error(t('voice.micDenied'))
+      const cause = error as { name?: string; message?: string }
+      const detail = [cause?.name || 'Error', cause?.message].filter(Boolean).join(': ')
+      const client = navigator.userAgent.match(/RoamiApp\/[^\s]+/)?.[0] || 'Web'
+      message.error({ key: 'voice-mic-access', content: t('voice.micDeniedDetail', { detail, client, secure: String(window.isSecureContext) }), duration: 8 })
       return
     }
     if (!pressedRef.current) { stream.getTracks().forEach((tk) => tk.stop()); setPhase('idle'); return } // 授权期间已松手
