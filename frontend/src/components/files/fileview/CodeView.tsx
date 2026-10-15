@@ -6,7 +6,7 @@ import { lazyRetry } from '../../lazy-retry'
 
 const CodeEditor = lazyRetry(() => import('../CodeEditor'))
 
-export function CodeView({ stateKey, value, language, dark, readOnly, tabbed, height, onChange, onSave, revealLine, findNonce }: {
+export function CodeView({ stateKey, value, language, dark, readOnly, tabbed, height, onChange, onSave, revealLine }: {
   /** 视图状态（滚动、光标、选区）按它记：切走再切回来还在原处 */
   stateKey?: string
   value: string
@@ -18,12 +18,11 @@ export function CodeView({ stateKey, value, language, dark, readOnly, tabbed, he
   onChange: (v: string) => void
   onSave: () => void
   revealLine?: { line: number; nonce: number }
-  findNonce?: number
 }) {
   return (
     <div style={{ height, border: tabbed ? 'none' : '1px solid var(--border-subtle)', borderRadius: tabbed ? 0 : 8, overflow: 'hidden' }}>
       <Suspense fallback={<div style={{ height: '100%', display: 'grid', placeItems: 'center' }}><Spin /></div>}>
-        <CodeEditor stateKey={stateKey} value={value} language={language} dark={dark} readOnly={readOnly} onChange={onChange} onSave={onSave} revealLine={revealLine} findNonce={findNonce} />
+        <CodeEditor stateKey={stateKey} value={value} language={language} dark={dark} readOnly={readOnly} onChange={onChange} onSave={onSave} revealLine={revealLine} />
       </Suspense>
     </div>
   )

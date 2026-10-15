@@ -20,14 +20,12 @@ import { CodeView } from './CodeView'
 import { OfficeView } from './OfficeView'
 import { MediaView } from './MediaView'
 import { ChevronRight, CopyIcon, WarnIcon } from '../../../icons'
-import { registerFileFind } from '../file-find'
 
 export function FileView({
   path,
   accent,
   inline,
   active = true,
-  findFocused = true,
   tabbed,
   forcePreview,
   onClose,
@@ -44,8 +42,6 @@ export function FileView({
   // 多 tab 常驻挂载时，只有激活的才渲染重型 Monaco 编辑器/预览，避免多实例吃爆内存(OOM)。
   // 组件仍挂载 → draft/dirty 等 state 保留，切回来编辑内容不丢。
   active?: boolean
-  /** 当前文件组是否接收 Ctrl+F；分栏时只有最后操作的一栏接收 */
-  findFocused?: boolean
   // 编辑器 tab 上下文：外层 tab 已显示文件名+关闭，这里就不再重复顶部「▸ 文件名」标题行。
   tabbed?: boolean
   // 专用预览 tab（VSCode「侧栏预览」）：始终渲染 markdown/HTML，不显示编辑器/切换钮。
@@ -75,10 +71,8 @@ export function FileView({
   const downloadName = fileNameOf(path)
   const previewHeight = inline ? '100%' : '74vh'
   const [data, setData] = useState<any>(null)
-  const findRoot = useRef<HTMLDivElement>(null)
   const [err, setErr] = useState('')
   const [source, setSource] = useState(false) // markdown/HTML：源码/渲染切换
-  const [findNonce, setFindNonce] = useState(0)
   const [agentPick, setAgentPick] = useState(false)
   const [draft, setDraft] = useState('') // 编辑器当前文本
   const [saving, setSaving] = useState(false)
@@ -89,13 +83,6 @@ export function FileView({
 
   // 可编辑：文本/代码/JSON/Markdown（源码）；二进制、被截断的大文件、表格/图片/PDF/Office 不可编辑。
   const editable = !!data && !data.binary && !data.truncated && !isSheet && !rawOnly
-  useEffect(() => {
-    if (!active || !findFocused || rawOnly || isSheet || data?.binary) return
-    return registerFileFind(() => {
-      if (isMd || isHtml) setSource(true)
-      setFindNonce((n) => n + 1)
-    }, () => !inline ? 3 : findRoot.current?.contains(document.activeElement) ? 2 : 1)
-  }, [active, findFocused, rawOnly, isSheet, data?.binary, isMd, isHtml, inline])
   const dirty = editable && data ? draft !== data.content : false
   useEffect(() => { onDirtyChange?.(path, dirty); return () => onDirtyChange?.(path, false) }, [dirty, path])
 
@@ -121,7 +108,7 @@ export function FileView({
     if (rawOnly) return // 图片/音视频/PDF/Office 直接走 raw 或专用面板
     // tab 语境的 markdown 默认进编辑器(源码)、点预览才渲染;HTML 则默认直接渲染
     // (打开网页多是想看效果,不是编辑),两者都可用「源码/渲染」钮切换。
-    setData(null); setErr(''); setStale(false); setSource(!!tabbed && MD_EXT.includes(extOf(path))); setDraft(''); setFindNonce(0)
+    setData(null); setErr(''); setStale(false); setSource(!!tabbed && MD_EXT.includes(extOf(path))); setDraft('')
     api('GET', `/file?path=${encodeURIComponent(path)}`).then((r) => { setData(r.data); setDraft(r.data?.content || '') }).catch((e) => setErr(e.message))
   }, [path, rawOnly])
 
@@ -245,11 +232,11 @@ export function FileView({
             <>
               {isSheet
                 ? <CsvView path={path} text={data.content} sep={extOf(path) === 'tsv' ? '\t' : ','} height={previewHeight} inline={inline} truncated={data.truncated} />
-                : isMd && (!source || (forcePreview && !findNonce))
+                : isMd && (!source || forcePreview)
                   ? <MarkdownView path={path} content={data.content} accent={accent} height={previewHeight} pad={forcePreview ? '0 8px' : undefined} resolveHref={resolvePreviewHref} onLinkClick={openPreviewLink} />
-                  : isHtml && (!source || (forcePreview && !findNonce))
+                  : isHtml && (!source || forcePreview)
                     ? <HtmlView path={path} rawUrl={serveUrl} name={name} mtime={data.mtime} height={previewHeight} />
-                    : <CodeView stateKey={path} value={draft} language={monacoLangOf(path)} dark={mode === 'dark'} readOnly={!editable} tabbed={tabbed} height={previewHeight} onChange={setDraft} onSave={() => saveRef.current()} findNonce={findNonce} />}
+                    : <CodeView stateKey={path} value={draft} language={monacoLangOf(path)} dark={mode === 'dark'} readOnly={!editable} tabbed={tabbed} height={previewHeight} onChange={setDraft} onSave={() => saveRef.current()} />}
               {data.truncated && <div style={{ color: '#d29922', fontSize: 12, marginTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}><WarnIcon size={12} />{t('file.truncatedLong')}</div>}
             </>
           )}
@@ -276,7 +263,7 @@ export function FileView({
     // 不给 flex 它按内容宽收缩——代码文件表现为「编辑器只占左边一条，右边空一大片」，
     // Monaco 按容器宽排版，容器多窄它就画多窄，长行还被截掉。
     return (
-      <div ref={findRoot} style={{ flex: 1, minWidth: 0, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
+      <div style={{ flex: 1, minWidth: 0, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
         {/* 编辑器 tab 语境(tabbed)：文件名/操作已由外层 tab 承担 → 去掉整条标题栏，编辑器全屏。保存用 Ctrl/Cmd+S。 */}
         {!tabbed && <div style={{ padding: '9px 12px', borderBottom: '1px solid var(--border-subtle)' }}>{titleNode}</div>}
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: tabbed ? 0 : 12, position: 'relative' }}>
@@ -284,7 +271,7 @@ export function FileView({
           {/* tab 语境无头部：markdown/HTML 右上角 VSCode 式按钮（切换预览 / 侧栏打开预览 / 新标签打开） */}
           {tabbed && (isMd || isHtml || isSheet) && data && !data.binary && (
             <div style={{ position: 'absolute', top: 6, right: 8, zIndex: 10, display: 'inline-flex', gap: 2, background: 'color-mix(in srgb, var(--bg-base) 82%, transparent)', borderRadius: 8, padding: 2 }}>
-              {(isMd || isHtml) && (!forcePreview || !!findNonce) && <Tooltip title={source ? t('file.preview') : t('file.source')} placement="bottom">
+              {(isMd || isHtml) && !forcePreview && <Tooltip title={source ? t('file.preview') : t('file.source')} placement="bottom">
                 <Button type="text" size="small" onClick={() => setSource((s) => !s)} aria-label={source ? t('file.preview') : t('file.source')} style={{ color: !source ? accent : 'var(--text-dim)', width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><PreviewIcon /></Button>
               </Tooltip>}
               <Tooltip title={t('file.copyContent')} placement="bottom">

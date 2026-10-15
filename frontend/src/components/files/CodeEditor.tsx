@@ -24,7 +24,7 @@ import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 loader.config({ monaco })
 
 export default function CodeEditor({
-  value, language, dark, readOnly, onChange, onSave, revealLine, stateKey, findNonce,
+  value, language, dark, readOnly, onChange, onSave, revealLine, stateKey,
 }: {
   /** 给了就在卸载时存下视图状态（滚动、光标、选区），下次挂上对回去 */
   stateKey?: string
@@ -38,10 +38,8 @@ export default function CodeEditor({
   // 每次跳都换一个 nonce —— 同一文件已经开着时 value/language 都没变，
   // 没有 nonce 就不会触发重新定位（第二次点同一处会毫无反应）。
   revealLine?: { line: number; nonce: number }
-  findNonce?: number
 }) {
   const edRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
-  const openedFind = useRef(0)
   // 卸载（标签切走）时存视图状态。ref 取最新的 key：同一个编辑器实例不会换文件，但保险起见
   const keyRef = useRef(stateKey); keyRef.current = stateKey
   useEffect(() => () => { if (keyRef.current && edRef.current) rememberEditorView(keyRef.current, edRef.current.saveViewState()) }, [])
@@ -52,12 +50,6 @@ export default function CodeEditor({
     ed.setPosition({ lineNumber: revealLine.line, column: 1 })
     ed.focus()
   }, [revealLine?.line, revealLine?.nonce, value])
-  const openFind = () => {
-    if (!findNonce || openedFind.current === findNonce || !edRef.current) return
-    openedFind.current = findNonce
-    void edRef.current.getAction('actions.find')?.run()
-  }
-  useEffect(openFind, [findNonce])
   // 让编辑器背景/装订线/缩略图跟应用统一（用 --bg-base，避免 Monaco 默认灰底跟四周不一致）。
   const appBg = (typeof getComputedStyle !== 'undefined'
     ? getComputedStyle(document.documentElement).getPropertyValue('--bg-base').trim()
@@ -76,7 +68,6 @@ export default function CodeEditor({
       onChange={(v) => onChange(v ?? '')}
       onMount={(editor, m) => {
         edRef.current = editor
-        openFind()
         // Ctrl/Cmd+S 保存（onSave 读最新 draft，见 Viewer）
         editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => onSave())
         if (revealLine?.line) { editor.revealLineInCenter(revealLine.line); editor.setPosition({ lineNumber: revealLine.line, column: 1 }) }

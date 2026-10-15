@@ -432,7 +432,7 @@ export default function FileWorkspace({
             const prev = isPreview(f)
             return (
               <div key={f} style={{ position: 'absolute', inset: 0, zIndex: 6, background: 'var(--bg-base)', display: active === f ? 'block' : 'none' }}>
-                <FileView path={realPath(f)} accent={accent} inline tabbed forcePreview={prev} active={active === f} findFocused={focus === g}
+                <FileView path={realPath(f)} accent={accent} inline tabbed forcePreview={prev} active={active === f}
                   onClose={() => closeFileTab(f, g)} onOpenPath={(p) => openInGroup(p, g)}
                   onDirtyChange={prev ? undefined : setFileDirty} onOpenAgent={onOpenAgent}
                   revealLine={!prev && reveal?.path === realPath(f) ? { line: reveal.line, nonce: reveal.nonce } : undefined}
