@@ -9,6 +9,7 @@
 // 冒泡阶段的监听在终端聚焦时根本收不到 ⌘K——这正是「在终端页按不出搜索」的原因。
 import { useEffect, useState, useRef } from 'react'
 import { matchHotkey, useKeybindings } from '../keybindings'
+import { openCurrentFileFind } from '../../files/file-find'
 import { CommandPalette } from './CommandPalette'
 import type { PaletteActions, PaletteItem } from './types'
 
@@ -28,6 +29,14 @@ export function GlobalSearch({ items, actions, dir }: {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'KeyF' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+        if (openCurrentFileFind()) {
+          e.preventDefault()
+          e.stopPropagation()
+          setOpen(false)
+        }
+        return
+      }
       const el = document.activeElement as HTMLElement | null
       const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
       const inTerm = !!el?.closest?.('.xterm')

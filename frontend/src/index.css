@@ -562,8 +562,12 @@ html[data-pointer="coarse"] .tt-nav-collapse::after {
 .tt-ins-act.on { color: var(--text-bright); }
 .tt-ins-act.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -4px; height: 2px; border-radius: 2px; background: var(--accent); }
 html[data-pointer="coarse"] .tt-ins-act { width: 44px; height: 40px; }
-.tt-ins-scope { display: flex; align-items: center; height: 36px; padding: 0 14px; flex: 0 0 auto; font-size: var(--fs-sm); font-weight: 600; color: var(--text-bright); }
+.tt-ins-scope { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); flex: 0 0 auto; font-size: var(--fs-sm); font-weight: 600; color: var(--text-bright); min-width: 0; }
 .tt-ins-scope .nm { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-ins-branch-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--accent); }
+.tt-ins-branch { flex: 1; min-width: 0; }
+.tt-ins-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dimmer); font-size: var(--fs-meta); font-weight: 400; }
+html[data-pointer="coarse"] .tt-ins-branch, html[data-pointer="coarse"] .tt-ins-branch .ant-select-selector { min-height: 44px; }
 .tt-ins-body { flex: 1; min-height: 0; min-width: 0; flex-direction: column; }
 /* 内容搜索：输入框 + 按文件分组的命中行 */
 .tt-csearch { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 0 10px 10px; }

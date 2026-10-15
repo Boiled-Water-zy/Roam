@@ -353,6 +353,8 @@ const enUS = {
   'tabs.closeLeft': 'Close tabs to the left',
   'tabs.closeRight': 'Close tabs to the right',
   'inspector.toggle': 'Right panel',
+  'inspector.browseBranch': 'Browse branch worktree',
+  'inspector.detachedBranch': 'Detached HEAD',
   'chat.sendTo': 'Message {name}…',
   'pathbar.source': 'Source',
   'search.contentNone': 'No matches',
