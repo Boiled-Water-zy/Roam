@@ -353,6 +353,8 @@ const zhCN = {
   'tabs.closeLeft': '关闭左侧标签',
   'tabs.closeRight': '关闭右侧标签',
   'inspector.toggle': '右栏',
+  'inspector.browseBranch': '查看分支工作树',
+  'inspector.detachedBranch': '游离 HEAD',
   'chat.sendTo': '给 {name} 发消息…',
   'pathbar.source': '源码',
   'search.contentNone': '没有匹配的内容',
