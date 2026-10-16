@@ -20,7 +20,7 @@ export default memo(function OpenCodeChat({ name, file, onOpenFile, onOpenGit, a
   const status = useMemo(() => ({ ...toAgentStatus(raw, tasks), errors: derived.errors, elapsed: derived.elapsed }), [raw, tasks, derived])
 
   return <ChatShell
-    emptyHint={resolvedFile === '' ? t('chat.noTranscriptYet') : undefined}
+    emptyHint={resolvedFile !== undefined && msgs.length === 0 ? t('chat.noTranscriptYet') : undefined}
     name={name} accent={CODEX_ACCENT} error={err} onOpenFile={onOpenFile} tasks={tasks} status={status} onOpenGit={onOpenGit} lastErrorId={derived.lastErrorId}
     placeholder={t('chat.sendTo', { name: label })} agent="opencode"
     messages={view} results={results} hasEarlier={hasEarlier} onLoadEarlier={loadEarlier}

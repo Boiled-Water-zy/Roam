@@ -38,3 +38,18 @@ func TestOpenCodeSessionDoesNotPickOldSession(t *testing.T) {
 		t.Fatalf("selected %q", got)
 	}
 }
+
+func TestPaneWorktreeDirUsesVisibleWorktree(t *testing.T) {
+	root := t.TempDir()
+	worktree := filepath.Join(root, ".worktrees", "2026-1013-1917-001x")
+	if err := os.MkdirAll(worktree, 0700); err != nil {
+		t.Fatal(err)
+	}
+	capture := "old output mentioning /.worktrees/other:branch\n  Build · model\n  …/work…/smart-evolution/.worktrees/2026-1013-1917-001x:feat-ssh218-inspect  ctrl+p commands\n"
+	if got := paneWorktreeDir(root, capture); got != worktree {
+		t.Fatalf("selected %q, want %q", got, worktree)
+	}
+	if got := paneWorktreeDir(root, "no footer"); got != root {
+		t.Fatalf("fallback = %q", got)
+	}
+}

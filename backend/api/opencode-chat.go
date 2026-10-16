@@ -31,6 +31,10 @@ func openCodeResumeID(argv []string) string {
 	return ""
 }
 
+func openCodeSessionDir(name, dir string) string {
+	return paneWorktreeDir(dir, sessionCapture(name, 8))
+}
+
 func openCodeSession(db *sql.DB, dir string, pid int) string {
 	if id := openCodeResumeID(processArgv(pid)); id != "" {
 		var found string
@@ -47,12 +51,14 @@ func openCodeSession(db *sql.DB, dir string, pid int) string {
 }
 
 func (a *API) OpenCodeStatus(c *gin.Context) {
-	dir, pid := paneToolProc(a.sessionTarget(c), cmdlineHasOpenCode)
+	name := a.sessionTarget(c)
+	dir, pid := paneToolProc(name, cmdlineHasOpenCode)
 	if dir == "" {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{"running": false}})
 		return
 	}
 	id := ""
+	dir = openCodeSessionDir(name, dir)
 	if db, err := openCodeDB(); err == nil {
 		defer db.Close()
 		id = openCodeSession(db, dir, pid)
@@ -128,7 +134,8 @@ func parseOpenCodeMessage(id, kind, raw string) (cMsg, string) {
 }
 
 func (a *API) OpenCodeTranscript(c *gin.Context) {
-	dir, pid := paneToolProc(a.sessionTarget(c), cmdlineHasOpenCode)
+	name := a.sessionTarget(c)
+	dir, pid := paneToolProc(name, cmdlineHasOpenCode)
 	if dir == "" {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{"messages": []cMsg{}, "nextOffset": 0, "file": ""}})
 		return
@@ -139,6 +146,7 @@ func (a *API) OpenCodeTranscript(c *gin.Context) {
 		return
 	}
 	defer db.Close()
+	dir = openCodeSessionDir(name, dir)
 	id := openCodeSession(db, dir, pid)
 	if id == "" {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{"messages": []cMsg{}, "nextOffset": 0, "file": ""}})
