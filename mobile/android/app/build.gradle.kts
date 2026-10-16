@@ -10,8 +10,8 @@ android {
         applicationId = "com.roami.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "0.4.4"
+        versionCode = 16
+        versionName = "0.4.5"
     }
     buildTypes {
         release {
