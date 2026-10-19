@@ -1,4 +1,29 @@
 const enUS = {
+  'env.noSessions': 'No active sessions to receive variables.',
+  'env.noVariables': 'No environment variables to push.',
+  'env.pushConfirm': 'Send these variables to all {count} active sessions using export without restarting them. Targets are checked again when executed.',
+  'env.pushResult': 'Push completed: {success} succeeded, {failed} failed, {skipped} skipped.',
+  'phone.iosUnsupported': 'This node does not support iOS. Connect from a macOS node with Xcode and idb.',
+  'agent.memoryDeleteConfirm': 'Delete this memory and keep its sources?',
+  'twoFactor.copyFailed': 'Could not copy. Select the secret and copy it manually.',
+  'cluster.restartFailed': 'Restart request failed. Configuration is saved; please retry.',
+  'cluster.recoveryTimeout': 'Configuration is saved, but the service did not recover in time. Check the service and refresh, or retry later.',
+
+  'settings.draftKept': 'Unsaved changes. This tab keeps your draft when you return to this form. Save before closing or refreshing.',
+  'settings.draftRestored': 'Your unsaved draft was restored. Save before closing or refreshing.',
+
+  'settings.browserRestartConfirm': 'Save the current configuration, then restart Chrome? Active mirror sessions will disconnect.',
+  'settings.browserPendingRestart': 'Configuration saved. Restart Chrome to apply it.',
+
+  'twoFactor.reauthHint': 'Enter your current login password or a valid authentication code to continue.',
+  'twoFactor.reauthFailed': 'Verification failed. Check your password or code; after repeated failures, try again later.',
+
+  'settings.readFailed': 'Could not read settings; status is unknown. Retry before making changes.',
+
+  'settings.preference.saving': 'Syncing settings…',
+  'settings.preference.saved': 'Settings synced',
+  'settings.preference.failed': 'Settings are not synced and only apply on this page. Please retry.',
+
   'agent.sessionReply.answer': 'Reply to background session {sessionId} (assignment {dispatchId}): {answer}',
   'agent.sessionReply.progress': 'Background session progress',
   'agent.sessionReply.blocked': 'Background session needs attention',
@@ -1081,7 +1106,7 @@ const enUS = {
   'phone.quality.standard': 'SD',
   'phone.quality.high': 'HD',
   'settings.phone': 'Phone',
-  'settings.phoneTitle': 'Phone / Android',
+  'settings.phoneTitle': 'Phone devices',
   'phone.platform': 'Platform',
   'phone.platform.android': 'Android',
   'phone.platform.ios': 'iOS',
@@ -1407,7 +1432,7 @@ const enUS = {
   'env.keyPlaceholder': 'KEY',
   'env.valuePlaceholder': 'VALUE',
   'env.pushed': 'Pushed',
-  'env.pushToSessions': 'Push to sessions',
+  'env.pushToSessions': 'Push to all active sessions',
   'env.empty': 'No environment variables',
   'env.deleteConfirm': 'Delete?',
   'twoFactor.title': 'Two-factor authentication (TOTP / Authenticator)',

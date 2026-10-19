@@ -111,6 +111,7 @@ export function buildSettings(deps: {
   onLogout?: () => void
   nodeLabel: string
   isHub: boolean
+  onBrowserReady?: (run: (() => Promise<void>) | null) => void
   onBrowserRestart: () => void
   onEnvPush: () => void
 }): SettingsModel {
@@ -290,7 +291,7 @@ export function buildSettings(deps: {
       id: 'node.browser', name: t('settings.browser'), parent: t('set.groupNode'), scope: 'node',
       note: t('settings.browserHelp'),
       items: [{
-        id: 'browser', label: t('settings.browser'), bare: true, control: { kind: 'custom', node: <BrowserSettings /> },
+        id: 'browser', label: t('settings.browser'), bare: true, control: { kind: 'custom', node: <BrowserSettings onRestartReady={deps.onBrowserReady} /> },
         keywords: 'chrome headless window scale profile 无头 窗口 缩放 镜像',
       }],
     },
