@@ -1,0 +1,242 @@
+{
+  "reference": {
+    "title": "How to Use Meta Muse",
+    "author": "Kevin Stratvert",
+    "url": "https://www.youtube.com/watch?v=xBSLmwVTsRc",
+    "durationSeconds": 478,
+    "reviewed": "完整字幕及关键操作帧；视频仅作交互参考，不代表对演示服务端能力的独立验证。"
+  },
+  "scope": "桌面优先；首批复用既有接口，新的鉴权与审批契约需确认。",
+  "items": [
+    {
+      "id": "R01",
+      "priority": "P0",
+      "title": "可收起的桌面工作台",
+      "dependency": "已有接口",
+      "proposal": "桌面右侧首次默认展开，用户可收起并记住状态；本期只显示任务和记忆两个入口，聊天输入持续可用。",
+      "referenceTime": "2:43",
+      "status": "已实现并验证"
+    },
+    {
+      "id": "R02",
+      "priority": "P0",
+      "title": "按任务组织执行动态",
+      "dependency": "已有任务列表与 SSE",
+      "proposal": "动态与任务合并为任务入口；一条记录对应一个后台任务，展示名称、进度、结果摘要、执行器与时间。工具调用、命令和子 Agent 在所属任务详情展开；普通问答与未归属任务的过程保留在主对话。",
+      "referenceTime": "2:43",
+      "status": "任务入口已合并；任务级工具聚合待实现"
+    },
+    {
+      "id": "R03",
+      "priority": "P0",
+      "title": "时间分组与真实任务状态",
+      "dependency": "已有任务列表",
+      "proposal": "桌面按更新时间倒序分今天 / 昨天 / 日期；每条对应真实后台任务，状态保留失败、未知、待验收的区别。窄桌面原弹窗仍保留原分组。",
+      "referenceTime": "2:43",
+      "status": "已实现并验证"
+    },
+    {
+      "id": "R04",
+      "priority": "P0",
+      "title": "任务详情就地打开",
+      "dependency": "已有任务详情",
+      "proposal": "在侧栏查看结果、继续要求、子任务及产物，不用弹窗挡住聊天。",
+      "referenceTime": "2:43",
+      "status": "已实现并验证"
+    },
+    {
+      "id": "R05",
+      "priority": "P0",
+      "title": "任务入口统一",
+      "dependency": "已有斜线命令与任务标识",
+      "proposal": "菜单、/tasks、聊天回执都进入同一任务入口；回执有 taskId 时直接定位详情。取消独立动态标签，/memory 仍进入记忆。",
+      "referenceTime": "2:43",
+      "status": "菜单与斜线入口已统一；回执定位待实现"
+    },
+    {
+      "id": "R06",
+      "priority": "P0",
+      "title": "任务内部按需查看执行过程",
+      "dependency": "已有详情接口；需核对工具与任务的关联",
+      "proposal": "任务详情内折叠展示工具调用、命令、子 Agent、输入输出和产物；仅使用实际关联记录，不将独立工具调用伪造成后台任务。",
+      "referenceTime": "1:07",
+      "status": "设计已更新，待实现"
+    },
+    {
+      "id": "R07",
+      "priority": "P0",
+      "title": "统一记忆就近可查",
+      "dependency": "已有记忆目录",
+      "proposal": "记忆使用与任务一致的列表排版，保留搜索、按需展开的筛选、来源与内容展开；不将记忆目录冒充本轮召回证据。",
+      "referenceTime": "5:16",
+      "status": "已实现并验证"
+    },
+    {
+      "id": "R08",
+      "priority": "P0",
+      "title": "定时提醒集中管理",
+      "dependency": "已有提醒接口",
+      "proposal": "显示已存在的提醒、时区与下次运行时间，复用取消和来源跳转。",
+      "referenceTime": "4:30",
+      "status": "现有通知入口保留；独立标签暂缓"
+    },
+    {
+      "id": "R09",
+      "priority": "P0",
+      "title": "保存并迁移侧栏状态",
+      "dependency": "浏览器本地状态",
+      "proposal": "节点分别保存展开状态和标签，首次默认展开任务；旧 activity / reminders 标签映射到 tasks，保留已保存的收起状态与 memory 标签。",
+      "referenceTime": "2:43",
+      "status": "已实现并验证"
+    },
+    {
+      "id": "R10",
+      "priority": "P0",
+      "title": "真实状态与连接层级",
+      "dependency": "已有状态协议",
+      "proposal": "已委派、待确认、失败、未知单独显示；消息流连通仅说明流连接。",
+      "referenceTime": "4:21",
+      "status": "已实现并验证"
+    },
+    {
+      "id": "R11",
+      "priority": "P1",
+      "title": "回复中的任务回执卡",
+      "dependency": "少量前端工作",
+      "proposal": "主回复内给简短任务回执和明确的查看入口，展示实际报告摘要。",
+      "referenceTime": "4:30",
+      "status": "建议下一批"
+    },
+    {
+      "id": "R12",
+      "priority": "P1",
+      "title": "自动记忆写入反馈",
+      "dependency": "需要可见写入事件",
+      "proposal": "告诉用户刚记住什么、适用范围与来源；只在真实落库后提示。",
+      "referenceTime": "5:16",
+      "status": "建议下一批"
+    },
+    {
+      "id": "R13",
+      "priority": "P1",
+      "title": "输入区附件体验",
+      "dependency": "已有附件协议",
+      "proposal": "统一文件托盘、上传状态、图片预览与错误重试，保留本地图片压缩。",
+      "referenceTime": "5:53",
+      "status": "建议下一批"
+    },
+    {
+      "id": "R14",
+      "priority": "P1",
+      "title": "成果列表与预览",
+      "dependency": "已有单任务产物接口",
+      "proposal": "按任务汇总真实文件，支持预览、下载与打开专业会话。",
+      "referenceTime": "5:53",
+      "status": "建议下一批"
+    },
+    {
+      "id": "R15",
+      "priority": "P1",
+      "title": "能力示例与任务模板",
+      "dependency": "需要整理可用能力",
+      "proposal": "单独提供可执行示例，选择后先填草稿；不在常年主对话反复展示引导。",
+      "referenceTime": "6:29",
+      "status": "建议下一批"
+    },
+    {
+      "id": "R16",
+      "priority": "P1",
+      "title": "任务、记忆、文件联合搜索",
+      "dependency": "需要确定查询覆盖范围",
+      "proposal": "区分当前会话与全局，完整检索需服务端分页或索引，不能拿最近 200 条充当全量。",
+      "referenceTime": "6:29",
+      "status": "建议下一批"
+    },
+    {
+      "id": "R17",
+      "priority": "P1",
+      "title": "连接器式能力目录",
+      "dependency": "已有 Skill / CLI / MCP 目录",
+      "proposal": "说明能干什么、来源、安装与可用状态，沿用内置不可启停的约束。",
+      "referenceTime": "2:53",
+      "status": "建议下一批"
+    },
+    {
+      "id": "R18",
+      "priority": "P1",
+      "title": "执行链耗时视图",
+      "dependency": "已有 trace 与时间戳",
+      "proposal": "区分排队、模型等待、工具执行与委派等待，缺失的耗时标记未知。",
+      "referenceTime": "1:07",
+      "status": "建议下一批"
+    },
+    {
+      "id": "R19",
+      "priority": "P1",
+      "title": "模型与执行器用量",
+      "dependency": "需要核对供应商数据",
+      "proposal": "展示实际 token / 配额 / 余额来源；无价格或无官方用量时不估成已知。",
+      "referenceTime": "7:12",
+      "status": "建议下一批"
+    },
+    {
+      "id": "R20",
+      "priority": "需确认",
+      "title": "条件监控与主动提醒",
+      "dependency": "新增条件状态与去重协议",
+      "proposal": "在原定时机制上定义检查条件、触发通知与冷却，不能只靠文本描述承诺监控。",
+      "referenceTime": "4:30",
+      "status": "等待决策"
+    },
+    {
+      "id": "R21",
+      "priority": "需确认",
+      "title": "动作预览与授权卡",
+      "dependency": "新增审批绑定协议",
+      "proposal": "审批入口集中展示真正待决定的动作与目标、参数摘要，决定需绑定 task / revision / 幂等键；已授权的常规 CLI 派活不重复确认，任务待验收仍属于任务状态。",
+      "referenceTime": "4:21",
+      "status": "等待协议决策，示意占位"
+    },
+    {
+      "id": "R22",
+      "priority": "需确认",
+      "title": "外部账号连接",
+      "dependency": "新增 OAuth / 密钥存储边界",
+      "proposal": "Gmail、Calendar 等需要定义账号权限、撤销和私有存储，不自动接入用户账号。",
+      "referenceTime": "2:53",
+      "status": "等待决策"
+    },
+    {
+      "id": "R23",
+      "priority": "需确认",
+      "title": "助手个性化资料",
+      "dependency": "产品偏好决策",
+      "proposal": "昵称和形象可选，先确认是否纳入本轮；执行器身份与权限不能由外观替代。",
+      "referenceTime": "0:55",
+      "status": "等待决策"
+    },
+    {
+      "id": "R24",
+      "priority": "需确认",
+      "title": "跨设备待发队列",
+      "dependency": "新增服务端队列协议",
+      "proposal": "当前草稿队列仍属于浏览器；跨设备与关闭页面后代发需服务端幂等和调度。",
+      "referenceTime": "0:30",
+      "status": "等待决策"
+    }
+  ],
+  "designRevision": {
+    "date": "2026-10-19",
+    "decision": "用户要求按 Muse 复刻展示列表；先不制作头像，保留任务与记忆双入口。",
+    "navigation": [
+      "任务",
+      "记忆"
+    ],
+    "implementationBaseline": "fc57a07",
+    "scope": "桌面列表复刻：时间分组、浅底图标、标题 / 报告摘要 / 时间；无独立卡片框，记忆筛选按需展开。未改动已批准的 Agent 框架架构。",
+    "futureNavigation": [
+      "审批（待协议确认）",
+      "定时（仍可从原通知入口访问）"
+    ]
+  }
+}
