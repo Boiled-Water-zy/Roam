@@ -14,16 +14,19 @@ import (
 	"time"
 )
 
+const maxPythonAgentSchemaVersion = 8
+
 type BackupEntry struct {
 	DatabaseDescriptor
 	SHA256        string `json:"sha256"`
 	SchemaVersion int    `json:"schemaVersion"`
 }
 type BackupManifest struct {
-	Version   int           `json:"formatVersion"`
-	Layout    Layout        `json:"layout"`
-	Created   string        `json:"createdAt"`
-	Databases []BackupEntry `json:"databases"`
+	Version   int                   `json:"formatVersion"`
+	Layout    Layout                `json:"layout"`
+	Created   string                `json:"createdAt"`
+	Databases []BackupEntry         `json:"databases"`
+	Artifacts []ArtifactBackupEntry `json:"artifacts,omitempty"`
 }
 
 func fileHash(path string) (string, error) {
@@ -135,6 +138,19 @@ func (p Paths) BackupSet(destination string) (string, error) {
 		}
 		manifest.Databases = append(manifest.Databases, BackupEntry{DatabaseDescriptor: d, SHA256: hash, SchemaVersion: version})
 	}
+	artifacts, present, e := indexedArtifacts(stage, manifest.Databases)
+	if e != nil {
+		return "", e
+	}
+	if present {
+		manifest.Version = 2
+		for _, entry := range artifacts {
+			if e = transferArtifact(p.Data, filepath.Join(stage, "files"), entry); e != nil {
+				return "", fmt.Errorf("backup artifact %s: %w", entry.SHA256, e)
+			}
+		}
+	}
+	manifest.Artifacts = artifacts
 	if e = atomicJSON(filepath.Join(stage, "catalog.json"), c); e != nil {
 		return "", e
 	}
@@ -162,7 +178,7 @@ func ValidateBackup(path string) (BackupManifest, Catalog, error) {
 	if e = json.Unmarshal(b, &m); e != nil {
 		return m, c, e
 	}
-	if m.Version != 1 || m.Layout.Version != LayoutVersion {
+	if (m.Version != 1 && m.Version != 2) || m.Layout.Version != LayoutVersion {
 		return m, c, fmt.Errorf("unsupported backup version")
 	}
 	b, e = os.ReadFile(filepath.Join(path, "catalog.json"))
@@ -190,6 +206,9 @@ func ValidateBackup(path string) (BackupManifest, Catalog, error) {
 		if d.Kind == "main" && d.SchemaVersion > len(mainSteps) {
 			return m, c, fmt.Errorf("backup main schema is newer than this binary")
 		}
+		if d.Kind == "agent" && (d.Owner != "python-agent" || d.SchemaVersion < 1 || d.SchemaVersion > maxPythonAgentSchemaVersion) {
+			return m, c, fmt.Errorf("unsupported Agent schema or owner: %s", d.ID)
+		}
 		if d.DatabaseDescriptor != c.Databases[i] {
 			return m, c, fmt.Errorf("backup descriptor mismatch")
 		}
@@ -201,6 +220,24 @@ func ValidateBackup(path string) (BackupManifest, Catalog, error) {
 		hash, e := fileHash(target)
 		if e != nil || hash != d.SHA256 {
 			return m, c, fmt.Errorf("backup checksum failed: %s", d.ID)
+		}
+	}
+	indexed, present, err := indexedArtifacts(path, m.Databases)
+	if err != nil {
+		return m, c, err
+	}
+	if present && m.Version != 2 {
+		return m, c, fmt.Errorf("Agent artifact backup package is incomplete")
+	}
+	if len(indexed) != len(m.Artifacts) {
+		return m, c, fmt.Errorf("artifact manifest does not match database")
+	}
+	for i, entry := range indexed {
+		if entry != m.Artifacts[i] {
+			return m, c, fmt.Errorf("artifact manifest entry mismatch")
+		}
+		if err = transferArtifact(filepath.Join(path, "files"), "", entry); err != nil {
+			return m, c, err
 		}
 	}
 	return m, c, nil

@@ -134,6 +134,8 @@ func runCLI(args []string, _ string) (handled bool, code int) {
 				return true, runSession([]string{"help"})
 			case "chrome":
 				return true, runChrome([]string{"help"})
+			case "agent":
+				return true, runAgent([]string{"help"})
 			case "project", "auth":
 				return true, runAPICommand(rest[0], []string{"help"})
 			case "db":
@@ -150,6 +152,8 @@ func runCLI(args []string, _ string) (handled bool, code int) {
 		return true, 0
 	case "session", "ttmux":
 		return true, runSession(rest)
+	case "agent":
+		return true, runAgent(rest)
 	case "db":
 		return true, runDatabase(rest)
 	case "plugin", "__autoconfirm", "_plugin-host":
@@ -214,11 +218,12 @@ func runChrome(args []string) int {
 
 const completionScript = `_roami_complete() {
  local cur="${COMP_WORDS[COMP_CWORD]}"
- local words="session chrome project db server auth plugin help version completion"
+ local words="session chrome project agent db server auth plugin help version completion"
  case "${COMP_WORDS[1]}" in
  session) words="ls new attach detach kill rename send capture fork children parent swarm env info" ;;
  chrome) words="tabs goto click fill text eval screenshot record setup help" ;;
- project) words="ls show create prefs activity remove" ;;
+ agent) words="setup init serve status conversations new send history report notify execution" ;;
+ project) words="ls show sessions create prefs activity remove" ;;
  db) words="status migrate backup" ;;
  auth) words="login logout status" ;;
  esac
@@ -245,7 +250,8 @@ func printHelp(_ []pluginInfo) {
 	fmt.Printf("roami %s — 统一命令入口\n\n", displayVersion())
 	fmt.Println("  session <命令>     会话、窗格、蜂群与环境")
 	fmt.Println("  chrome <命令>      浏览器自动化")
-	fmt.Println("  project <命令>     ls / show / create / prefs / activity / remove")
+	fmt.Println("  project <命令>     ls / show / sessions / create / prefs / activity / remove")
+	fmt.Println("  agent <命令>       Python Agent 运行时、对话、任务回报与主动消息")
 	fmt.Println("  auth <命令>        login / logout / status")
 	fmt.Println("  db <命令>          status / migrate / backup")
 	fmt.Println("  plugin <命令>      插件管理；也可 roami <插件名> <命令>")

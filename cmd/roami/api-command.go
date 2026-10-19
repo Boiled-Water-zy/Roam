@@ -137,7 +137,7 @@ func runAPICommand(group string, args []string) int {
 		if group == "auth" {
 			fmt.Println("login|logout|status [--server URL] [--stdin] [--json]")
 		} else {
-			fmt.Println("ls|show|create|prefs|activity|remove [--server URL] [--json]")
+			fmt.Println("ls|show|sessions|create|prefs|activity|remove [--server URL] [--json]")
 		}
 		return 0
 	}
@@ -146,6 +146,8 @@ func runAPICommand(group string, args []string) int {
 	server := fs.String("server", "", "Roami 服务地址")
 	asJSON := fs.Bool("json", false, "JSON 输出")
 	stdin := fs.Bool("stdin", false, "从 stdin 读取登录 JSON")
+	provisionKey := fs.String("provision-key", "", "idempotent exclusive new-project key")
+	baseDir := fs.String("base-dir", "", "parent directory for a provisioned project")
 	name := fs.String("name", "", "显示名")
 	clone := fs.String("clone", "", "克隆地址")
 	pinned := fs.String("pinned", "", "true/false")
@@ -264,6 +266,11 @@ func runAPICommand(group string, args []string) int {
 	switch sub {
 	case "ls":
 		raw, err = a.request("GET", "/api/projects", nil)
+	case "sessions":
+		if target == "" {
+			return fail(fmt.Errorf("需要 project ID"))
+		}
+		raw, err = a.request("GET", "/api/projects?sessionProject="+url.QueryEscape(target), nil)
 	case "show":
 		if target == "" {
 			return fail(fmt.Errorf("需要 project ID"))
@@ -295,16 +302,18 @@ func runAPICommand(group string, args []string) int {
 			}
 		}
 	case "create":
-		if target == "" {
+		if target == "" && *provisionKey == "" {
 			return fail(fmt.Errorf("需要目录"))
 		}
 		if strings.HasPrefix(target, "~/") {
 			home, _ := os.UserHomeDir()
 			target = filepath.Join(home, target[2:])
 		}
-		target, err = filepath.Abs(target)
+		if target != "" {
+			target, err = filepath.Abs(target)
+		}
 		if err == nil {
-			raw, err = a.request("POST", "/api/projects", map[string]string{"dir": target, "displayName": *name, "cloneUrl": *clone})
+			raw, err = a.request("POST", "/api/projects", map[string]string{"dir": target, "displayName": *name, "cloneUrl": *clone, "provisionKey": *provisionKey, "baseDir": *baseDir})
 		}
 	case "remove", "activity", "prefs":
 		if target == "" {

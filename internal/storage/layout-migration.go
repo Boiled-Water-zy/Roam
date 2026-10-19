@@ -9,33 +9,53 @@ import (
 )
 
 type LayoutPlan struct {
+	Source    *Paths               `json:"source,omitempty"`
 	Paths     Paths                `json:"target"`
 	Databases []DatabaseDescriptor `json:"databases"`
 	Legacy    bool                 `json:"legacy"`
 }
 type layoutJournal struct {
-	Layout Layout `json:"layout"`
-	Stage  string `json:"stage"`
+	Layout          Layout                `json:"layout"`
+	Stage           string                `json:"stage"`
+	ArtifactVerify  bool                  `json:"artifactVerify,omitempty"`
+	ArtifactRestore bool                  `json:"artifactRestore,omitempty"`
+	Artifacts       []ArtifactBackupEntry `json:"artifacts,omitempty"`
+	ArtifactStage   string                `json:"artifactStage,omitempty"`
 }
 
 func PlanLayout(p Paths) (LayoutPlan, error) {
 	plan := LayoutPlan{Paths: p, Legacy: true}
-	if b, e := os.ReadFile(filepath.Join(p.Data, "storage-layout.json")); e == nil {
+	b, readError := os.ReadFile(filepath.Join(p.Data, "storage-layout.json"))
+	if readError == nil {
+		var e error
 		var l Layout
 		if e = json.Unmarshal(b, &l); e != nil {
 			return plan, e
+		}
+		if l.Version != LayoutVersion {
+			return plan, fmt.Errorf("unsupported source layout version")
 		}
 		old := l.Paths
 		c, e := old.Catalog()
 		if e != nil {
 			return plan, e
 		}
+		if c.Instance != l.Instance {
+			return plan, fmt.Errorf("source layout instance mismatch")
+		}
+		plan.Source = &old
 		for _, d := range c.Databases {
+			if filepath.IsAbs(d.Path) || d.Path == "" || startsParent(d.Path) || d.Path == ".." {
+				return plan, fmt.Errorf("invalid source database path")
+			}
 			d.Path = filepath.Join(old.Database, d.Path)
 			plan.Databases = append(plan.Databases, d)
 		}
 		plan.Legacy = false
 		return plan, nil
+	}
+	if !os.IsNotExist(readError) {
+		return plan, readError
 	}
 	if _, e := os.Stat(filepath.Join(p.Home, "meta.db")); e == nil {
 		plan.Databases = append(plan.Databases, DatabaseDescriptor{ID: "main", Kind: "main", Path: filepath.Join(p.Home, "meta.db"), Owner: "core"})
@@ -93,17 +113,31 @@ func (p Paths) RecoverLayout() error {
 	if c.Instance != j.Layout.Instance {
 		return fmt.Errorf("recovery instance mismatch")
 	}
+	if e = finishArtifactRestore(p, j); e != nil {
+		return e
+	}
 	if e = atomicJSON(filepath.Join(p.Data, "storage-layout.json"), j.Layout); e != nil {
 		return e
 	}
 	return os.Remove(filepath.Join(p.Data, "storage-migration.json"))
 }
-func publishLayout(p Paths, stage string, l Layout) error {
+func publishLayout(p Paths, stage string, l Layout, artifacts ...artifactRestorePlan) error {
 	journal := filepath.Join(p.Data, "storage-migration.json")
-	if e := atomicJSON(journal, layoutJournal{Layout: l, Stage: stage}); e != nil {
+	j := layoutJournal{Layout: l, Stage: stage}
+	if len(artifacts) > 0 {
+		j.ArtifactVerify = artifacts[0].VerifyOnly
+		// Older binaries must reject in-place verification rather than skip it.
+		j.ArtifactRestore = true
+		j.Artifacts = artifacts[0].Files
+		j.ArtifactStage = artifacts[0].Stage
+	}
+	if e := atomicJSON(journal, j); e != nil {
 		return e
 	}
 	if e := os.Rename(stage, p.Database); e != nil {
+		return e
+	}
+	if e := finishArtifactRestore(p, j); e != nil {
 		return e
 	}
 	if e := atomicJSON(filepath.Join(p.Data, "storage-layout.json"), l); e != nil {
@@ -117,6 +151,9 @@ func (p Paths) RestoreSet(source string) error {
 		return e
 	}
 	defer release()
+	if _, e = os.Lstat(filepath.Join(p.Data, "storage-migration.json")); !os.IsNotExist(e) {
+		return fmt.Errorf("restore requires no pending migration; recover it first")
+	}
 	m, c, e := ValidateBackup(source)
 	if e != nil {
 		return e
@@ -127,6 +164,11 @@ func (p Paths) RestoreSet(source string) error {
 	if _, e = os.Stat(filepath.Join(p.Data, "storage-layout.json")); !os.IsNotExist(e) {
 		return fmt.Errorf("restore requires an empty instance")
 	}
+	if m.Version == 2 {
+		if _, e = os.Lstat(filepath.Join(p.Data, "agent-artifacts")); !os.IsNotExist(e) {
+			return fmt.Errorf("restore requires an absent artifact destination")
+		}
+	}
 	if e = os.MkdirAll(filepath.Dir(p.Database), 0700); e != nil {
 		return e
 	}
@@ -134,14 +176,42 @@ func (p Paths) RestoreSet(source string) error {
 	if e != nil {
 		return e
 	}
+	artifactPlan := artifactRestorePlan{}
 	published := false
 	defer func() {
 		if !published {
 			os.RemoveAll(stage)
+			if artifactPlan.Stage != "" {
+				os.RemoveAll(artifactPlan.Stage)
+			}
 		}
 	}()
 	for _, d := range c.Databases {
 		if e = snapshot(filepath.Join(source, d.Path), filepath.Join(stage, d.Path)); e != nil {
+			return e
+		}
+	}
+	if m.Version == 2 {
+		fileStage, stageErr := os.MkdirTemp(p.Data, ".agent-artifacts-restore-*")
+		if stageErr != nil {
+			return stageErr
+		}
+		artifactPlan = artifactRestorePlan{Stage: fileStage, Files: m.Artifacts}
+		if e = os.MkdirAll(filepath.Join(fileStage, "agent-artifacts"), 0700); e != nil {
+			return e
+		}
+		for _, entry := range m.Artifacts {
+			if e = transferArtifact(filepath.Join(source, "files"), fileStage, entry); e != nil {
+				return e
+			}
+		}
+		fileStageDir, openErr := os.Open(fileStage)
+		if openErr != nil {
+			return openErr
+		}
+		e = fileStageDir.Sync()
+		fileStageDir.Close()
+		if e != nil {
 			return e
 		}
 	}
@@ -152,6 +222,9 @@ func (p Paths) RestoreSet(source string) error {
 	}
 	// Once the durable journal exists, leave staging for --recover after interruption.
 	published = true
+	if m.Version == 2 {
+		return publishLayout(p, stage, m.Layout, artifactPlan)
+	}
 	return publishLayout(p, stage, m.Layout)
 }
 func (p Paths) MigrateLayout(offline bool) error {
@@ -169,6 +242,9 @@ func (p Paths) MigrateLayout(offline bool) error {
 	plan, e := PlanLayout(p)
 	if e != nil {
 		return e
+	}
+	if plan.Source != nil && filepath.Clean(plan.Source.Data) != filepath.Clean(p.Data) {
+		return fmt.Errorf("data-root relocation requires backup and restore into an empty instance")
 	}
 	if !plan.Legacy {
 		l, e := p.ReadLayout()
@@ -216,6 +292,13 @@ func (p Paths) MigrateLayout(offline bool) error {
 	manifest := BackupManifest{Version: 1, Layout: l, Created: time.Now().UTC().Format(time.RFC3339Nano)}
 	for _, d := range plan.Databases {
 		target := destination(p, d)
+		if plan.Source != nil {
+			sourceRelative, relativeError := filepath.Rel(plan.Source.Database, d.Path)
+			if relativeError != nil || startsParent(sourceRelative) || sourceRelative == ".." || filepath.IsAbs(sourceRelative) {
+				return fmt.Errorf("invalid source database destination")
+			}
+			target = filepath.Join(p.Database, sourceRelative)
+		}
 		rel, e := filepath.Rel(p.Database, target)
 		if e != nil || startsParent(rel) {
 			return fmt.Errorf("invalid migration destination")
@@ -235,7 +318,15 @@ func (p Paths) MigrateLayout(offline bool) error {
 		if e != nil {
 			return e
 		}
-		manifest.Databases = append(manifest.Databases, BackupEntry{DatabaseDescriptor: d, SHA256: hash})
+		version, versionError := snapshotSchemaVersion(filepath.Join(backup, rel))
+		if versionError != nil {
+			return versionError
+		}
+		manifest.Databases = append(manifest.Databases, BackupEntry{DatabaseDescriptor: d, SHA256: hash, SchemaVersion: version})
+	}
+	artifactPlan, artifactError := backupLayoutArtifacts(p.Data, backup, &manifest)
+	if artifactError != nil {
+		return artifactError
 	}
 	if e = atomicJSON(filepath.Join(backup, "catalog.json"), c); e != nil {
 		return e
@@ -244,6 +335,9 @@ func (p Paths) MigrateLayout(offline bool) error {
 		return e
 	}
 	if e = atomicJSON(filepath.Join(backup, "manifest.json"), manifest); e != nil {
+		return e
+	}
+	if _, _, e = ValidateBackup(backup); e != nil {
 		return e
 	}
 	// Main schema changes happen only in the staged copy, after a recoverable backup.
@@ -262,5 +356,8 @@ func (p Paths) MigrateLayout(offline bool) error {
 		return e
 	}
 	keep = true
+	if artifactPlan.VerifyOnly {
+		return publishLayout(p, stage, l, artifactPlan)
+	}
 	return publishLayout(p, stage, l)
 }

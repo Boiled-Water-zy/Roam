@@ -11,12 +11,14 @@
 // handleConnection）——防的是 CDP 连接在 Chrome 被内存压力杀掉/重启期间可能陷入不带退避的
 // 忙等死循环（不依赖出问题的那段代码自己配合退出，直接从外面强杀更可靠）。
 import { writeFile, mkdir, mkdtemp, rm, copyFile, rename } from 'node:fs/promises'
-import { existsSync, unlinkSync, writeFileSync, openSync } from 'node:fs'
+import { existsSync, unlinkSync, writeFileSync, openSync, realpathSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, extname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import net from 'node:net'
+import { OperationReceipts } from './operation-receipts.mjs'
+import { discoverBrowser, observePage } from './browser-observation.mjs'
 
 const SELF_PATH = fileURLToPath(import.meta.url)
 const SOCK_PATH = process.env.TTMUX_CHROME_SOCK || '/tmp/ttmux-chrome-cli.sock'
@@ -24,6 +26,7 @@ const DAEMON_LOG = process.env.TTMUX_CHROME_DAEMON_LOG || '/tmp/ttmux-chrome-cli
 const DAEMON_IDLE_MS = Number(process.env.TTMUX_CHROME_DAEMON_IDLE || 300) * 1000
 
 class ChromeError extends Error {}
+const OPERATION_VERBS = new Set(['new', 'goto', 'url', 'title', 'click', 'fill', 'type', 'press', 'close', 'screenshot', 'shot', 'text', 'html', 'attr', 'wait', 'pdf', 'observe'])
 
 // ── 纯工具函数：不依赖某一次调用的 flags/pos，daemon 内多条请求共用也安全 ──────────────
 
@@ -32,7 +35,7 @@ function parseArgs(argv) {
   const rest = argv.slice(1)
   const flags = {}
   const pos = []
-  const booleanFlags = new Set(['full', 'fast', 'fresh', 'mobile'])
+  const booleanFlags = new Set(['full', 'fast', 'fresh', 'mobile', 'no-retry', 'no-focus'])
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]
     if (a.startsWith('--')) {
@@ -110,11 +113,28 @@ function userPages(pages) {
 }
 
 async function pick(pages, flags, fail) {
-  const p = pickPage(pages, flags, fail)
+  const p = await pickPage(pages, flags, fail)
   await p.bringToFront().catch(() => {})
   return p
 }
-function pickPage(pages, flags, fail) {
+async function targetIdentity(page) {
+  const session = await page.context().newCDPSession(page)
+  try {
+    const { targetInfo } = await session.send('Target.getTargetInfo')
+    return targetInfo.targetId
+  } finally {
+    await session.detach().catch(() => {})
+  }
+}
+async function pickPage(pages, flags, fail) {
+  if (flags.target != null) {
+    if (flags.tab != null || flags.url) return fail('CHROME_TARGET_SELECTION_CONFLICT')
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(flags.target)) return fail('CHROME_TARGET_INVALID')
+    for (const page of pages) {
+      if (await targetIdentity(page).catch(() => null) === flags.target) return page
+    }
+    return fail('CHROME_TARGET_NOT_FOUND')
+  }
   if (flags.tab != null) return pages[Number(flags.tab)] || fail('无此 tab #' + flags.tab)
   if (flags.url) return pages.find((x) => x.url().includes(flags.url)) || fail('无匹配 url 的 tab: ' + flags.url)
   return pages[0] || fail('当前没有打开的 tab（先 chrome new <url>）')
@@ -169,16 +189,34 @@ async function allowInsecureTLS(ctx, page) {
 
 // ── 主动词分发：操作一条已连好的 CDP browser。daemon 与一次性冷启动路径共用 ─────────────
 
-async function executeVerb(browser, verb, flags, pos, timeoutMs, io) {
+function navigationWait(flags) {
+  const value = flags['wait-until'] || 'load'
+  if (!['load', 'domcontentloaded', 'commit'].includes(value)) throw new ChromeError('CHROME_NAVIGATION_WAIT_INVALID')
+  return value
+}
+
+async function executeVerb(browser, verb, flags, pos, timeoutMs, io, browserId) {
   const fail = (m) => { throw new ChromeError(m) }
   const to = timeoutMs
+  if (flags['expected-browser'] != null && browserId !== flags['expected-browser']) fail('CHROME_BROWSER_CHANGED')
   const settle = () => settleMs(flags)
   const ctx = browser.contexts()[0] || (await browser.newContext())
   const pages = userPages(ctx.pages())
-  const pickHere = () => pick(pages, flags, fail)
+  let selected
+  const pickHere = async () => {
+    if (selected) return selected
+    if (flags['expected-scene'] != null) {
+      if (!/^[a-f0-9]{64}$/.test(flags['expected-scene'])) fail('CHROME_SCENE_INVALID')
+      selected = await pickPage(pages, flags, fail)
+      const current = await observePage(selected)
+      if (current.signature !== flags['expected-scene']) fail('CHROME_SCENE_CHANGED')
+      if (!flags['no-focus']) await selected.bringToFront().catch(() => {})
+    } else selected = flags['no-focus'] ? await pickPage(pages, flags, fail) : await pick(pages, flags, fail)
+    return selected
+  }
 
   switch (verb) {
-    case 'goto': { const p = await pickHere(); await allowInsecureTLS(ctx, p); await p.goto(pos[0], { waitUntil: 'load', timeout: to }); io.log({ url: p.url(), title: await p.title() }); break }
+    case 'goto': { const p = await pickHere(); await allowInsecureTLS(ctx, p); await p.goto(pos[0], { waitUntil: navigationWait(flags), timeout: to }); io.log({ url: p.url(), title: await p.title() }); break }
     case 'url': io.log((await pickHere()).url()); break
     case 'title': io.log(await (await pickHere()).title()); break
     case 'click': await (await pickHere()).click(pos[0], { timeout: to }); io.log('ok'); break
@@ -254,8 +292,24 @@ async function executeVerb(browser, verb, flags, pos, timeoutMs, io) {
       break
     }
     case 'pdf': { const f = pos[0] || 'page.pdf'; await (await pickHere()).pdf({ path: f }); io.log(f); break }
-    case 'tabs': io.log(await Promise.all(pages.map(async (pg, i) => ({ i, title: await pg.title().catch(() => ''), url: pg.url() })))); break
-    case 'new': { const np = await ctx.newPage(); if (pos[0]) { await allowInsecureTLS(ctx, np); await np.goto(pos[0], { waitUntil: 'load', timeout: to }) } await np.bringToFront().catch(() => {}); io.log({ i: userPages(ctx.pages()).indexOf(np), url: np.url() }); break }
+    case 'capabilities': io.log({ version: 'roami-browser-v1', browserId: browserId, features: ['target_id', 'operation_receipts', 'scene_observation', 'expected_scene'] }); break
+    case 'observe': io.log(await observePage(await pickHere(), flags.screenshot)); break
+    case 'tabs': io.log(await Promise.all(pages.map(async (pg, i) => ({ i, targetId: await targetIdentity(pg).catch(() => null), title: await pg.title().catch(() => ''), url: pg.url() })))); break
+    case 'new': {
+      if (flags['no-focus'] && !pos[0]) {
+        const session = await browser.newBrowserCDPSession()
+        try {
+          const { targetId } = await session.send('Target.createTarget', { url: 'about:blank', background: true })
+          io.log({ targetId, url: 'about:blank' })
+        } finally { await session.detach().catch(() => {}) }
+        break
+      }
+      const np = await ctx.newPage()
+      if (pos[0]) { await allowInsecureTLS(ctx, np); await np.goto(pos[0], { waitUntil: 'load', timeout: to }) }
+      if (!flags['no-focus']) await np.bringToFront().catch(() => {})
+      io.log({ i: userPages(ctx.pages()).indexOf(np), targetId: await targetIdentity(np), url: np.url() })
+      break
+    }
     case 'close': await (await pickHere()).close(); io.log('ok'); break
     default: fail('未知命令: ' + verb)
   }
@@ -450,19 +504,27 @@ function runFFmpeg(args, fail) {
 // ── Session：daemon 里跨请求复用的 CDP 连接（一次性冷启动路径也走它，只是活不过一条命令） ──
 
 class Session {
-  constructor() { this.browser = null; this.cdp = ''; this.recorder = new Recorder() }
+  constructor({ discover = discoverBrowser, connect } = {}) {
+    this.browser = null; this.cdp = ''; this.browserId = ''; this.recorder = new Recorder()
+    this.discover = discover
+    this.connect = connect || (async websocketUrl => {
+      const { chromium } = await import('playwright-core')
+      return chromium.connectOverCDP(websocketUrl, { timeout: 10000 })
+    })
+  }
   async browserFor(cdp) {
+    const discovered = await this.discover(cdp)
     // 换了地址就得重连：daemon 常驻、缓存的是「上一条命令那台」的连接，而目标端口是会变的
     // （后端 9222 被占时会换端口）。不比对就会把命令继续发给旧的那台。
-    if (this.browser && (!this.browser.isConnected() || this.cdp !== cdp)) {
+    if (this.browser && (!this.browser.isConnected() || this.cdp !== cdp || this.browserId !== discovered.id)) {
       try { await this.browser.close() } catch {} // 仅断连接，不杀共享 Chrome
       this.browser = null
     }
     if (!this.browser) {
       try {
-        const { chromium } = await import('playwright-core')
-        this.browser = await chromium.connectOverCDP(cdp, { timeout: 10000 })
+        this.browser = await this.connect(discovered.websocketUrl)
         this.cdp = cdp
+        this.browserId = discovered.id
       } catch (e) {
         throw new ChromeError('连不上 Chrome (' + cdp + '): ' + e.message)
       }
@@ -477,7 +539,7 @@ class Session {
       // record 的状态（进行中的 CDP screencast 会话）要跨 start/stop 两次独立调用存活，
       // 不能像其它动词那样是一次性的 executeVerb 调用，得单独路由到常驻的 recorder 实例。
       if (verb === 'record') { await this.recorder.handle(browser, flags, pos, fail, io); return }
-      await executeVerb(browser, verb, flags, pos, timeoutMs, io)
+      await executeVerb(browser, verb, flags, pos, timeoutMs, io, this.browserId)
     } catch (e) {
       // Chrome 死在命令中途（被回收/重启）：丢弃缓存连接，下条命令干净重连；
       // 页面级错误（选择器超时等）原样往上抛，daemon_request_with_retry 据此判断要不要重试。
@@ -508,6 +570,10 @@ const TRANSIENT_ERROR_MARKERS = ['Page crashed', 'has been closed', 'Connection 
 const IDEMPOTENT_VERBS = new Set(['goto', 'url', 'title', 'text', 'attr', 'html', 'wait', 'screenshot', 'shot', 'pdf', 'tabs', 'new', 'fill'])
 const isTransientError = (stderr) => TRANSIENT_ERROR_MARKERS.some((m) => stderr.includes(m))
 
+function operationPayload(verb, flags, pos) {
+  return [verb, pos, Object.entries(flags).filter(([key]) => !['operation-id', 'receipt-root'].includes(key)).sort(([a], [b]) => a.localeCompare(b))]
+}
+
 function makeIO() {
   const lines = []
   return { lines, log: (x) => { if (x !== undefined) lines.push(typeof x === 'string' ? x : JSON.stringify(x, null, 2)) } }
@@ -524,6 +590,7 @@ async function probeAlive(sockPath) {
 }
 
 async function handleConnection(conn, session) {
+  if (conn.destroyed) return // A queued liveness probe may have disconnected before its turn.
   // 看门狗兜底：内存紧张期间 Chrome/driver 被杀死后，playwright 客户端内部的重连逻辑可能
   // 陷入不带退避的忙等（不依赖那段代码自己配合退出，直接从外面强杀整个 daemon 进程更可靠）。
   // 下条命令的 daemonRequest() 连不上旧 socket 会自动重新拉起一个新 daemon，不需要人工介入。
@@ -549,7 +616,10 @@ async function handleConnection(conn, session) {
     conn.destroy()
     return
   }
-  const argv = Array.isArray(req.argv) ? req.argv : []
+  let argv = Array.isArray(req.argv) ? req.argv : []
+  // Older daemons reject this verb before touching a page instead of ignoring new flags.
+  const operationBound = argv[0] === '_operation' || argv[0] === '_scene'
+  if (argv[0] === '_managed' || operationBound) argv = argv.slice(1)
   if (req.cwd && existsSync(req.cwd)) { try { process.chdir(req.cwd) } catch {} }
   const { verb, flags, pos } = parseArgs(argv)
   const timeoutMs = num(flags.timeout, 15000)
@@ -560,7 +630,18 @@ async function handleConnection(conn, session) {
   let stderr = ''
   const watchdog = setTimeout(() => { process.exit(1) }, timeoutS * 1000)
   try {
-    await session.run(verb, flags, pos, timeoutMs, io)
+    if (flags['operation-id']) {
+      if (!operationBound || !OPERATION_VERBS.has(verb)) throw new ChromeError('CHROME_OPERATION_UNSUPPORTED')
+      const receipts = new OperationReceipts(flags['receipt-root'])
+      const record = await receipts.execute(flags['operation-id'], OperationReceipts.hash(operationPayload(verb, flags, pos)), async () => {
+        const output = makeIO()
+        await session.run(verb, flags, pos, timeoutMs, output)
+        return { stdout: output.lines.length ? output.lines.join('\n') + '\n' : '' }
+      })
+      io.log(record)
+    } else {
+      await session.run(verb, flags, pos, timeoutMs, io)
+    }
   } catch (e) {
     code = 1
     stderr = 'chrome: ' + (e?.message || String(e)) + '\n'
@@ -584,20 +665,23 @@ async function daemonMain() {
   const session = new Session()
   let queue = Promise.resolve() // 串行队列：同一时刻只处理一条请求（chdir 是全进程状态，必须串行）
   let idleTimer = null
+  let pendingConnections = 0
   // 录制中不能空闲自杀：录制期间 agent 可能在做别的事，daemon 收不到新命令，但录制本身要
   // 一直挂着（CDP screencast 会话）——空闲计时器到点先看是不是还在录，是就顺延，不能真杀掉。
   const scheduleIdleCheck = () => {
+    if (idleTimer) clearTimeout(idleTimer)
     idleTimer = setTimeout(() => {
-      if (session.recorder.isActive()) { scheduleIdleCheck(); return }
+      if (session.recorder.isActive() || pendingConnections > 0) { scheduleIdleCheck(); return }
       shutdown()
     }, DAEMON_IDLE_MS)
   }
   const server = net.createServer((conn) => {
+    pendingConnections++
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
     queue = queue
       .then(() => handleConnection(conn, session))
       .catch(() => {})
-      .finally(() => { scheduleIdleCheck() })
+      .finally(() => { pendingConnections--; if (pendingConnections === 0) scheduleIdleCheck() })
   })
   const shutdown = async () => {
     server.close()
@@ -688,23 +772,27 @@ async function daemonRequest(argv, timeoutS) {
 // 的语义）；重试是在"上一次大概率是撞见了 daemon/Chrome 瞬时故障"的前提下再搏一次，不该再
 // 陪等一整个完整预算——重试如果每次都用完整预算，最坏情况会从单次调用的 ~50s 叠加到 3 次共
 // ~150s，对 agent 来说是明显的可感知卡顿。重试专用超时给一个较短的固定上限。
-async function daemonRequestWithRetry(argv, timeoutMs, verb) {
+async function daemonRequestWithRetry(argv, timeoutMs, verb, request = daemonRequest, pause = sleep) {
   const fullTimeoutS = effectiveTimeoutMs(verb, timeoutMs) / 1000 + 35
   const retryTimeoutS = Math.min(fullTimeoutS, 20)
-  const attempts = 3
+  const flags = parseArgs(argv).flags
+  const attempts = flags['no-retry'] || flags['operation-id'] ? 1 : 3
+  const requestArgv = flags['expected-scene'] != null || flags['expected-browser'] != null || flags['no-focus'] ? ['_scene', ...argv]
+    : flags['operation-id'] ? ['_operation', ...argv]
+    : flags.target != null || flags['no-retry'] ? ['_managed', ...argv] : argv
   let resp = null
   for (let i = 0; i < attempts; i++) {
-    const r = await daemonRequest(argv, i === 0 ? fullTimeoutS : retryTimeoutS)
+    const r = await request(requestArgv, i === 0 ? fullTimeoutS : retryTimeoutS)
     resp = r.resp
     const last = i === attempts - 1
     if (resp === null) {
       if (r.sentBeforeFailure && !IDEMPOTENT_VERBS.has(verb)) return null
       if (last) return null
-      await sleep(300 * (i + 1))
+      await pause(300 * (i + 1))
       continue
     }
     const transient = resp.code && IDEMPOTENT_VERBS.has(verb) && isTransientError(resp.stderr || '')
-    if (transient && !last) { await sleep(300 * (i + 1)); continue }
+    if (transient && !last) { await pause(300 * (i + 1)); continue }
     return resp
   }
   return resp
@@ -721,6 +809,19 @@ async function main() {
   if (verb === '_daemon') { await daemonMain(); return }
 
   const timeoutMs = num(flags.timeout, 15000)
+
+  if (verb === 'operation-status' || verb === 'operation-cancel') {
+    const receipts = new OperationReceipts(flags['receipt-root'])
+    const record = verb === 'operation-cancel' ? await receipts.cancel(flags['operation-id']) : await receipts.read(flags['operation-id'])
+    console.log(JSON.stringify(record))
+    return
+  }
+  if (flags['operation-id'] || flags['receipt-root']) {
+    if (!OPERATION_VERBS.has(verb) || flags.fresh) throw new ChromeError('CHROME_OPERATION_UNSUPPORTED')
+    const receipts = new OperationReceipts(flags['receipt-root'])
+    const planned = await receipts.begin(flags['operation-id'], operationPayload(verb, flags, pos))
+    if (!planned.dispatch) { console.log(JSON.stringify(planned.record)); return }
+  }
 
   if ((verb === 'screenshot' || verb === 'shot') && flags.fresh) {
     // 私有实例与共享 Chrome 无关，不占 daemon
@@ -746,4 +847,8 @@ async function main() {
   process.exitCode = resp.code || 0
 }
 
-main().catch((e) => { console.error('chrome: ' + (e?.message || String(e))); process.exitCode = 1 })
+export { parseArgs, pickPage, targetIdentity, daemonRequestWithRetry, Session, navigationWait, handleConnection }
+
+if (process.argv[1] && realpathSync(process.argv[1]) === SELF_PATH) {
+  main().catch((e) => { console.error('chrome: ' + (e?.message || String(e))); process.exitCode = 1 })
+}

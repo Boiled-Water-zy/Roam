@@ -163,8 +163,7 @@ _daemon_start() {
 }
 
 # 写出内嵌 driver.mjs（构建时由 driver.mjs 内联）。引号 heredoc → JS 原样不展开。
-# 内容变了才落盘，并顺手请常驻 daemon 退场：daemon 是把 driver 代码读进内存长跑的，光换磁盘
-# 上的文件，跑着的还是旧逻辑——「升级后立即生效」会变成一句空话（最坏要等它空闲自杀）。
+# 原子刷新文件，保留正在执行动作的 daemon；新协议动词会让旧 daemon 在动作前拒绝。
 _write_driver() {
     mkdir -p "$CHROME_DIR"
     local tmp="${CHROME_DIR}/driver.mjs.$$.tmp" # 带 pid：并发的多条命令共用一个临时名会互相抢，
@@ -172,12 +171,29 @@ _write_driver() {
     cat > "$tmp" <<'TTMUX_CHROME_DRIVER_EOF'
 @@DRIVER@@
 TTMUX_CHROME_DRIVER_EOF
+    local receipt_tmp="${CHROME_DIR}/operation-receipts.mjs.$$.tmp"
+    cat > "$receipt_tmp" <<'ROAMI_OPERATION_RECEIPTS'
+@@OPERATION_RECEIPTS@@
+ROAMI_OPERATION_RECEIPTS
+    if [ -f "${CHROME_DIR}/operation-receipts.mjs" ] && cmp -s "$receipt_tmp" "${CHROME_DIR}/operation-receipts.mjs"; then
+        rm -f "$receipt_tmp"
+    else
+        mv -f "$receipt_tmp" "${CHROME_DIR}/operation-receipts.mjs"
+    fi
+    local observation_tmp="${CHROME_DIR}/browser-observation.mjs.$$.tmp"
+    cat > "$observation_tmp" <<'ROAMI_BROWSER_OBSERVATION'
+@@BROWSER_OBSERVATION@@
+ROAMI_BROWSER_OBSERVATION
+    if [ -f "${CHROME_DIR}/browser-observation.mjs" ] && cmp -s "$observation_tmp" "${CHROME_DIR}/browser-observation.mjs"; then
+        rm -f "$observation_tmp"
+    else
+        mv -f "$observation_tmp" "${CHROME_DIR}/browser-observation.mjs"
+    fi
     if [ -f "${CHROME_DIR}/driver.mjs" ] && cmp -s "$tmp" "${CHROME_DIR}/driver.mjs"; then
         rm -f "$tmp"
         return 0
     fi
     mv -f "$tmp" "${CHROME_DIR}/driver.mjs"
-    pkill -f "${CHROME_DIR}/driver.mjs _daemon" 2>/dev/null || true
 }
 
 # 安装/校验依赖：node + npm + playwright-core
@@ -189,7 +205,7 @@ _setup() {
         _info "安装 playwright-core → ${CHROME_DIR}（首次, 不下载额外浏览器）"
         ( cd "$CHROME_DIR" \
             && { [ -f package.json ] || npm init -y >/dev/null 2>&1; } \
-            && npm i --no-audit --no-fund --loglevel=error playwright-core ) \
+            && npm i --no-audit --no-fund --loglevel=error playwright-core >&2 ) \
             || { _err "playwright-core 安装失败（可重试: chrome setup）"; return 1; }
     fi
     return 0
@@ -300,7 +316,7 @@ _help() {
 roami chrome — 浏览器自动化（Playwright over CDP，驱动 ttmux Web 镜像那台 Chrome）
 
   roami chrome setup                     安装/更新依赖 (node + playwright-core)
-  roami chrome goto <url>                打开网址
+  roami chrome goto <url> [--wait-until load|domcontentloaded|commit]  打开网址
   roami chrome click <选择器>            点击
   roami chrome fill  <选择器> <文本>     填表单（直接设值）
   roami chrome type  <选择器> <文本>     逐字键入
@@ -312,14 +328,21 @@ roami chrome — 浏览器自动化（Playwright over CDP，驱动 ttmux Web 镜
   roami chrome wait  <选择器>            等待元素出现
   roami chrome screenshot [文件] [--full]   截图（默认 screenshot.png）
   roami chrome pdf   [文件]              导出 PDF（headless）
+  roami chrome capabilities              查询驱动能力与浏览器实例身份
+  roami chrome observe --target <id> [--screenshot <文件.png>]
   roami chrome tabs                      列出标签页（序号 / 标题 / url）
   roami chrome new   [url]               新开标签页
   roami chrome close                     关闭标签页
   roami chrome record start <文件.mp4>   录制目标标签当前画面（需要系统装有 ffmpeg）
   roami chrome record stop               停止并落盘录制
   roami chrome record status             查看是否在录制
+  roami chrome operation-status --operation-id <id> --receipt-root <目录>
+  roami chrome operation-cancel --operation-id <id> --receipt-root <目录>
 
-  通用选项: --tab <序号> | --url <子串>  选目标标签页（默认第一个）
+  通用选项: --target <稳定ID> | --tab <序号> | --url <子串>  选目标标签页（默认第一个）
+            --no-retry（仅执行一次，未知结果不重放）
+            --operation-id <32位ID> --receipt-root <私有目录>（持久化动作回执）
+            --expected-browser <实例ID> --expected-scene <观察签名>（动作前验证）
             --timeout <ms>（默认 15000）  --cdp <地址>
   截图选项: --viewport 1280x800  --wait <ms>  --clip x,y,w,h  --fast
             --fresh --goto <url>（临时干净 Chrome 截图）  --quality <1-100>（jpg）
@@ -342,6 +365,10 @@ case "$sub" in
     -v|--version)   echo "chrome v${TTMUX_CHROME_VERSION}"; exit 0 ;;
     setup)          _setup; exit $? ;;
 esac
+if [ "$sub" = "operation-status" ] || [ "$sub" = "operation-cancel" ]; then
+    _write_driver
+    exec node "${CHROME_DIR}/driver.mjs" "$@"
+fi
 _scan_cdp_arg "$@"
 fresh_screenshot=0
 if [ "$sub" = "screenshot" ] || [ "$sub" = "shot" ]; then

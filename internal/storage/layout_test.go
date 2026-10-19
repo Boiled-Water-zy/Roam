@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"sync"
 	"testing"
 )
@@ -247,5 +249,56 @@ func TestExplicitStoreRootCannotInheritAnotherDatabase(t *testing.T) {
 	}
 	if _, e = os.Stat(filepath.Join(foreign, "do-not-touch")); !os.IsNotExist(e) {
 		t.Fatal("explicit store touched another instance")
+	}
+}
+
+func TestRestoreRejectsUnsupportedAgentSchema(t *testing.T) {
+	p := isolatedPaths(t)
+	_, err := OpenManaged(p, DatabaseDescriptor{ID: "agent-runtime", Kind: "agent", Owner: "python-agent", Path: filepath.Join(p.Database, "agents", "runtime.db")},
+		[]Step{{Version: 1, Name: "first", SQL: "CREATE TABLE agent_test (id TEXT PRIMARY KEY)"}, {Version: 2, Name: "metadata", SQL: "ALTER TABLE agent_test ADD COLUMN metadata TEXT"}, {Version: 3, Name: "resources", SQL: "ALTER TABLE agent_test ADD COLUMN resources TEXT"}, {Version: 4, Name: "reminders", SQL: "ALTER TABLE agent_test ADD COLUMN reminders TEXT"}, {Version: 5, Name: "delivery", SQL: "ALTER TABLE agent_test ADD COLUMN delivery TEXT"}, {Version: 6, Name: "retention", SQL: "ALTER TABLE agent_test ADD COLUMN retention TEXT"}, {Version: 7, Name: "main", SQL: "ALTER TABLE agent_test ADD COLUMN main TEXT"}, {Version: 8, Name: "session_reports", SQL: "ALTER TABLE agent_test ADD COLUMN session_reports TEXT"}, {Version: 9, Name: "future", SQL: "ALTER TABLE agent_test ADD COLUMN future TEXT"}}, Options{HomeDir: p.Home, DataDir: p.Data})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup, err := p.BackupSet("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = ValidateBackup(backup); err == nil {
+		t.Fatal("newer Agent schema was accepted for restore")
+	}
+}
+
+func TestRestoreAcceptsSupportedPythonAgentSchemaVersions(t *testing.T) {
+	for _, version := range []int{1, 2, 3, 4, 5, 6, 7, 8} {
+		t.Run(strconv.Itoa(version), func(t *testing.T) {
+			p := isolatedPaths(t)
+			steps := []Step{{Version: 1, Name: "first", SQL: "CREATE TABLE agent_test(id TEXT PRIMARY KEY)"}, {Version: 2, Name: "metadata", SQL: "ALTER TABLE agent_test ADD COLUMN metadata TEXT"}, {Version: 3, Name: "resources", SQL: "ALTER TABLE agent_test ADD COLUMN resources TEXT"}, {Version: 4, Name: "reminders", SQL: "ALTER TABLE agent_test ADD COLUMN reminders TEXT"}, {Version: 5, Name: "delivery", SQL: "ALTER TABLE agent_test ADD COLUMN delivery TEXT"}, {Version: 6, Name: "retention", SQL: "ALTER TABLE agent_test ADD COLUMN retention TEXT"}, {Version: 7, Name: "main", SQL: "ALTER TABLE agent_test ADD COLUMN main TEXT"}, {Version: 8, Name: "session_reports", SQL: "ALTER TABLE agent_test ADD COLUMN session_reports TEXT"}}
+			_, err := OpenManaged(p, DatabaseDescriptor{ID: "agent-runtime", Kind: "agent", Owner: "python-agent", Path: filepath.Join(p.Database, "agents", "runtime.db")}, steps[:version], Options{HomeDir: p.Home, DataDir: p.Data})
+			if err != nil {
+				t.Fatal(err)
+			}
+			backup, err := p.BackupSet("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err = ValidateBackup(backup); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestBackupCompatibilityTracksThePythonSchemaVersion(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", "agent-runtime", "src", "roami_agent", "storage", "migrations.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(`(?m)^SCHEMA_VERSION = (\d+)$`).FindSubmatch(content)
+	if len(match) != 2 {
+		t.Fatal("Python schema version declaration missing")
+	}
+	version, err := strconv.Atoi(string(match[1]))
+	if err != nil || version != maxPythonAgentSchemaVersion {
+		t.Fatalf("Python schema %d and Go restore compatibility %d differ", version, maxPythonAgentSchemaVersion)
 	}
 }

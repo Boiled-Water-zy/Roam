@@ -6,6 +6,7 @@
 package server
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"log"
@@ -102,6 +103,8 @@ func New(cfg Config) *gin.Engine {
 	// 无 Cache-Control 的 GET 做启发式缓存，导致文件实时重载轮询的 /file/stat 一直拿到旧 mtime
 	// → 不刷新。统一禁缓存，兜底前端的 cache:no-store。
 	g.Use(func(c *gin.Context) { c.Header("Cache-Control", "no-store") })
+	mountAgentRuntime(g, cfg)
+	go agentDeliveryLoop(context.Background(), cfg, h)
 	{
 		g.GET("/cluster/config", cl.Get) // 当前角色 + 接入状态 + 本机局域网地址
 		g.PUT("/cluster/config", cl.Put) // 写回 config.yaml 的 cluster 段（令牌只写不读）
