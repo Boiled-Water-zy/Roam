@@ -8,6 +8,7 @@ import { useI18n } from '../../i18n'
 import { useLayout } from '../../layout'
 import Markdown from '../markdown/Markdown'
 import AgentMemory from './AgentMemory'
+import { openAgentPage } from './agent-page-route'
 import AgentTasks from './AgentTasks'
 import { taskFailureKey } from './task-failure'
 import AgentWorkspaceRail from './AgentWorkspaceRail'
@@ -36,8 +37,8 @@ export function agentFailure(error: any, t: (key: string) => string) {
 }
 const newKey = () => crypto.randomUUID()
 
-export default function AgentChat({ cid, branch, focusMessage = '', node, inbox, inboxOpen, select, notifications, projects, onSession, mobileActionsHost }: {
-  cid: string; branch: string; focusMessage?: string; node: string | null; inbox: AgentInboxState; inboxOpen: boolean
+export default function AgentChat({ cid, branch, focusMessage = '', inactive = false, node, inbox, inboxOpen, select, notifications, projects, onSession, mobileActionsHost }: {
+  cid: string; branch: string; focusMessage?: string; inactive?: boolean; node: string | null; inbox: AgentInboxState; inboxOpen: boolean
   select: (cid: string, branch?: string, message?: string) => void; notifications: () => void
   projects: { id: string; name: string }[]; onSession: (session: string) => void; onOverview: () => void
   mobileActionsHost?: HTMLElement | null
@@ -51,6 +52,7 @@ export default function AgentChat({ cid, branch, focusMessage = '', node, inbox,
   const [target, setTarget] = useState('direct'), [executor, setExecutor] = useState('codex')
   const [panel, setPanel] = useState<'tasks' | 'memory' | 'context' | null>(null)
   const showPanel = (next: 'tasks' | 'memory' | 'context') => {
+    if (phone && next !== 'context') { openAgentPage(next); return }
     if (wide && next !== 'context') { workspace.change({ open: true, tab: next }); setWorkspaceTask(''); setPanel(null) }
     else setPanel(next)
   }
@@ -95,12 +97,12 @@ export default function AgentChat({ cid, branch, focusMessage = '', node, inbox,
   const timeline = groupAgentTimeline(agentTimeline(bodies, activity))
   const visible = bodies.filter(m => m.content.text || m.content.question || m.content.taskStatus || m.content.attachments?.length || m.status === 'streaming')
   const eventIds = visible.map((m) => m.completedEventId || '').join(',')
-  useVisibleAgentReads(!panel && !source && !inboxOpen ? cid : '', scroll, eventIds, inbox.refresh)
+  useVisibleAgentReads(!inactive && !panel && !source && !inboxOpen ? cid : '', scroll, eventIds, inbox.refresh)
 
   useEffect(() => {
-    if (mainCID && !branch && !focusMessage && cid !== mainCID) select(mainCID)
+    if (!inactive && mainCID && !branch && !focusMessage && cid !== mainCID) select(mainCID)
     if (cid === mainCID) { try { localStorage.setItem(mirror, cid) } catch {} }
-  }, [cid, mainCID, branch, focusMessage, mirror, select])
+  }, [cid, mainCID, branch, focusMessage, mirror, select, inactive])
 
   useEffect(() => {
     stick.current = true; setError(''); setWorkspaceTask(''); setPanel(null); setSource(null); panelRequest.current++
@@ -236,8 +238,8 @@ export default function AgentChat({ cid, branch, focusMessage = '', node, inbox,
     </div>}</header>
     {phone && mobileActionsHost && createPortal(
       <>
-        <button type="button" className="tt-mobile-topbar-icon" aria-label={t('agent.tasks')} aria-haspopup="dialog" onClick={() => showPanel('tasks')}><ChecklistIcon size={20} /></button>
-        <button type="button" className="tt-mobile-topbar-icon" aria-label={t('agent.memory')} aria-haspopup="dialog" onClick={() => showPanel('memory')}><NotebookIcon size={20} /></button>
+        <button type="button" className="tt-mobile-topbar-icon" aria-label={t('agent.tasks')} onClick={() => showPanel('tasks')}><ChecklistIcon size={20} /></button>
+        <button type="button" className="tt-mobile-topbar-icon" aria-label={t('agent.memory')} onClick={() => showPanel('memory')}><NotebookIcon size={20} /></button>
       </>, mobileActionsHost)}
     {(inbox.unavailable || thread.failed) && <div className="agent-feedback" role="status"><span>{t(thread.view ? 'agent.reconnecting' : 'agent.unavailable')}</span><button type="button" className="tt-act" aria-label={t('agent.retry')} onClick={() => { inbox.refresh(); thread.refresh() }}><RefreshIcon /></button></div>}
     {historical && <div className="agent-feedback"><span>{t('agent.historicalBranch')}</span><button type="button" className="tt-act" onClick={() => select(mainCID || cid)}>{t('agent.currentConversation')}</button></div>}
