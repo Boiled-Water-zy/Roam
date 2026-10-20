@@ -19,7 +19,7 @@ from roami_agent.executors.input_cancellation import (
     passive_cancel_boundary,
 )
 from roami_agent.protocol.browser import browser_config
-from roami_agent.protocol.errors import DomainError, ToolCancellation
+from roami_agent.protocol.errors import DomainError, ToolCancellation, ToolPreflightError
 from roami_agent.protocol.identity import identity
 from roami_agent.protocol.serialization import encoded
 from roami_agent.storage.database import event, rows
@@ -126,7 +126,9 @@ class BrowserDriver:
             if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
                 raise DomainError("BROWSER_PRIVATE_DIRECTORY_INVALID", 503)
 
-    async def _cli(self, verb, *args, operation_id=None, browser_id=None, signature=None):
+    async def _cli(
+        self, verb, *args, operation_id=None, browser_id=None, signature=None, capture_wait_ms=0
+    ):
         await asyncio.to_thread(self._directories)
         argv = [
             self.settings.cli_bin,
@@ -136,7 +138,7 @@ class BrowserDriver:
             "--no-retry",
             "--no-focus",
             "--timeout",
-            "0",
+            str(capture_wait_ms),
         ]
         if self.config.get("endpoint"):
             argv += ["--cdp", self.config["endpoint"]]
@@ -212,6 +214,13 @@ class BrowserDriver:
         if (
             not isinstance(body.get("signature"), str)
             or not re.fullmatch(r"[a-f0-9]{64}", body["signature"])
+            or (
+                "navigationSignature" in body
+                and (
+                    not isinstance(body["navigationSignature"], str)
+                    or not re.fullmatch(r"[a-f0-9]{64}", body["navigationSignature"])
+                )
+            )
             or not all(isinstance(body.get(key), str) for key in ("url", "title", "domText"))
             or not isinstance(body.get("controls"), list)
             or len(body["controls"]) > 64
@@ -261,7 +270,11 @@ class BrowserDriver:
         return view
 
     async def capabilities(self):
-        result = await self._cli("capabilities")
+        try:
+            result = await self._cli("capabilities")
+        except (DomainError, OSError, TimeoutError) as exc:
+            code = exc.code if isinstance(exc, DomainError) else "BROWSER_DRIVER_UNAVAILABLE"
+            raise ToolPreflightError(code, 503) from exc
         features = result.get("features") if isinstance(result, dict) else None
         if (
             not isinstance(features, list)
@@ -275,7 +288,7 @@ class BrowserDriver:
             or not isinstance(result.get("browserId"), str)
             or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", result["browserId"])
         ):
-            raise DomainError("BROWSER_DRIVER_UNAVAILABLE", 503)
+            raise ToolPreflightError("BROWSER_DRIVER_UNAVAILABLE", 503)
         return result
 
     @staticmethod
@@ -537,6 +550,8 @@ class BrowserDriver:
                     "--screenshot",
                     str(path),
                     browser_id=browser_id,
+                    # Optional frames must release the observer queue so DOM evidence can continue.
+                    capture_wait_ms=5000,
                 )
             except DomainError as exc:
                 if exc.code not in {"CHROME_OBSERVATION_TIMEOUT", "CHROME_SCENE_CHANGED"}:
@@ -627,7 +642,9 @@ class BrowserDriver:
             choice,
             arguments,
             browser_id=browser_id,
-            signature=body["signature"],
+            signature=body.get("navigationSignature", body["signature"])
+            if choice == "goto"
+            else body["signature"],
             phase=phase,
         )
         try:
