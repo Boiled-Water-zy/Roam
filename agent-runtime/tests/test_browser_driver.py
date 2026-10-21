@@ -56,7 +56,7 @@ class BrowserFixture:
         while index < len(argv):
             value = argv[index]
             if value.startswith("--"):
-                if value in {"--no-retry", "--no-focus"}:
+                if value in {"--no-retry", "--no-focus", "--no-start", "--only-if-background"}:
                     flags[value] = True
                 else:
                     index += 1
@@ -81,6 +81,8 @@ class BrowserFixture:
                     "expected_scene",
                 ],
             }
+        elif verb == "tabs":
+            output = [{"targetId": "target-fixture"}] if "new" in self.writes else []
         elif verb in {"operation-cancel", "operation-status"}:
             output = self.receipts[operation_id]
             if self.stop_known and verb == "operation-cancel":
@@ -488,7 +490,9 @@ async def test_unavailable_background_screenshot_keeps_fresh_dom_and_never_repea
         if argv[2] == "observe" and "--screenshot" in argv:
             assert argv[argv.index("--timeout") + 1] == "5000"
             return {"exitCode": 1, "stdout": "", "stderr": "CHROME_OBSERVATION_TIMEOUT"}
-        assert argv[argv.index("--timeout") + 1] == ("5000" if argv[2] == "observe" else "0")
+        assert argv[argv.index("--timeout") + 1] == (
+            "5000" if argv[2] == "observe" else "3000" if argv[2] == "tabs" else "0"
+        )
         return await fixture(argv, **options)
 
     runtime.browser.runner = runner
@@ -600,6 +604,8 @@ def test_malformed_driver_acknowledgements_cannot_prove_inputs_stopped(state, st
         {"enabled": "yes"},
         {"max_tabs": True},
         {"max_tabs": -1},
+        {"max_tabs": 0},
+        {"max_tabs": 21},
         {"max_tabs": 1.5},
         {"existing_tabs": 1},
         {"unknown": True},
@@ -610,10 +616,10 @@ def test_browser_configuration_rejects_invalid_values(config):
         browser_config(config)
 
 
-@pytest.mark.parametrize("budget", [0, 1, 7, 100])
-def test_browser_budget_is_optional_and_has_no_fixed_ceiling(budget):
+@pytest.mark.parametrize("budget", [1, 7, 20])
+def test_browser_budget_has_a_shared_twenty_tab_ceiling(budget):
     assert browser_config({"max_tabs": budget})["max_tabs"] == budget
-    assert browser_config({"enabled": True})["max_tabs"] == 0
+    assert browser_config({"enabled": True})["max_tabs"] == 20
 
 
 def test_captured_source_facts_and_navigation_links_remain_available_to_worker():
@@ -629,7 +635,7 @@ def test_captured_source_facts_and_navigation_links_remain_available_to_worker()
     assert view["controlsTruncated"] is False
 
 
-async def test_unlimited_tabs_and_durable_observation_failure_do_not_weaken_ownership(store):
+async def test_shared_tab_budget_and_durable_observation_failure_do_not_weaken_ownership(store):
     from test_runtime import ConversationModel, until
 
     fixture, failed, target_count, observations = BrowserFixture(), False, 0, 0
@@ -637,6 +643,14 @@ async def test_unlimited_tabs_and_durable_observation_failure_do_not_weaken_owne
     async def runner(argv, **options):
         nonlocal target_count, observations
         verb, flags, _ = fixture.arguments(argv)
+        if verb == "tabs":
+            return {
+                "exitCode": 0,
+                "stdout": encoded(
+                    [{"targetId": "target-" + str(i + 1)} for i in range(target_count)]
+                ),
+                "stderr": "",
+            }
         if verb == "observe":
             observations += 1
             if failed:
@@ -685,7 +699,7 @@ async def test_unlimited_tabs_and_durable_observation_failure_do_not_weaken_owne
                 await runtime.browser.open(
                     {"url": "https://different.example"}, dict(binding, toolCallId="different-url")
                 )
-            runtime.browser.config["max_tabs"] = 0
+            runtime.browser.config["max_tabs"] = 20
             failed = True
             with pytest.raises(DomainError, match="BROWSER_DRIVER_UNAVAILABLE"):
                 await runtime.browser.observe({"resourceId": resource_id}, binding)
