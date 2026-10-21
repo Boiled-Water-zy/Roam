@@ -56,7 +56,7 @@ class Tools:
             wire = tool.wire()
             if role == "main" and self.directory and tool.name == "delegate":
                 wire = deepcopy(wire)
-                wire["function"]["parameters"]["required"] = ["goal", "routing"]
+                wire["function"]["parameters"]["required"] = ["goal", "routing", "requestComplete"]
                 wire["function"]["parameters"]["properties"].pop("executor", None)
             if role == "research":
                 wire = deepcopy(wire)
@@ -123,7 +123,8 @@ class Tools:
         tool, args = self.validate(call, role)
         value = await tool.handler(args, dict(binding, role=role))
         body = encoded(value).encode()
-        if len(body) <= 128_000 or self.artifacts is None:
+        # Status lists must survive the gateway's provenance recheck before commit.
+        if len(body) <= 128_000 or self.artifacts is None or tool.name == "task_status":
             return value
         reference = await self.artifacts.put(
             binding["owner"],
@@ -137,7 +138,17 @@ class Tools:
         essential = {
             key: item
             for key, item in (value.items() if isinstance(value, dict) else ())
-            if key in {"exitCode", "state", "error", "acceptedOnly", "kind", "taskId", "id"}
+            if key
+            in {
+                "exitCode",
+                "state",
+                "error",
+                "acceptedOnly",
+                "requestComplete",
+                "kind",
+                "taskId",
+                "id",
+            }
             and isinstance(item, (bool, int, float, str, type(None)))
             and len(encoded(item)) <= 1000
         }

@@ -7,6 +7,7 @@ from roami_agent.protocol.errors import DomainError
 from roami_agent.protocol.serialization import encoded
 from roami_agent.protocol.tools import Tool, object_schema
 from roami_agent.storage.database import row
+from roami_agent.storage.task_handoff import accepted_handoffs
 
 
 def register_main_tools(registry, tasks, memory, targets, router=None):
@@ -285,9 +286,18 @@ def register_main_tools(registry, tasks, memory, targets, router=None):
         }
 
     async def status(args, binding):
+        handoffs = await tasks.db.call(lambda db: accepted_handoffs(db, binding.get("turnId")))
+        if args.get("taskId") in handoffs:
+            raise DomainError("TASK_ALREADY_HANDED_OFF", 409)
         items = await tasks.list(
-            binding["owner"], binding["conversation"], for_model=True, task_id=args.get("taskId")
+            binding["owner"],
+            binding["conversation"],
+            for_model=True,
+            task_id=args.get("taskId"),
+            **({"exclude_task_ids": tuple(handoffs)} if handoffs else {}),
         )
+        if handoffs and not items:
+            raise DomainError("TASK_ALREADY_HANDED_OFF", 409)
 
         def annotate(db):
             turn = row(
@@ -298,6 +308,17 @@ def register_main_tools(registry, tasks, memory, targets, router=None):
                     continue
                 intent = json.loads(item["intent_json"])
                 attempt = item.get("latestAttempt") or {}
+                if args.get("includeResult") is True and attempt.get("runId"):
+                    report = row(
+                        db,
+                        "SELECT result_json FROM task_attempts WHERE id=? AND task_id=? AND task_revision=?",
+                        (attempt["runId"], item["id"], item["revision"]),
+                    )
+                    item["executorResult"] = (
+                        json.loads(report["result_json"])
+                        if report and report["result_json"]
+                        else None
+                    )
                 if intent.get("target", {}).get("resourceOnly") is not True or not attempt.get(
                     "runId"
                 ):
@@ -330,6 +351,27 @@ def register_main_tools(registry, tasks, memory, targets, router=None):
                         "Cached facts may answer an explicit recap/status request only; never present them as new retrieval."
                     ),
                 }
+            if args.get("includeResult") is not True:
+                items[:] = [
+                    {
+                        key: value
+                        for key, value in item.items()
+                        if key
+                        in {
+                            "id",
+                            "title",
+                            "revision",
+                            "state",
+                            "origin_message_id",
+                            "contextExcluded",
+                            "latestAttempt",
+                        }
+                    }
+                    for item in items
+                ]
+                for item in items:
+                    if item.get("latestAttempt") and item["state"] == "succeeded":
+                        item["latestAttempt"].pop("summary", None)
             return items
 
         return await tasks.db.call(annotate)
@@ -420,7 +462,7 @@ def register_main_tools(registry, tasks, memory, targets, router=None):
                     },
                     "requestComplete": {
                         "type": "boolean",
-                        "description": "All parts of this request are handled/delegated; false or omitted continues Main.",
+                        "description": "Required: true after all requested parts are handled/delegated; false only while other parts remain. Never wait or poll for delegated work.",
                     },
                     "routing": routing_schema(),
                     "executor": {"type": "string", "enum": ["native", "codex", "claude"]},
@@ -451,7 +493,7 @@ def register_main_tools(registry, tasks, memory, targets, router=None):
                     },
                     "fromMessageId": {"type": "string"},
                 },
-                ["goal"],
+                ["goal", "requestComplete"],
             ),
             delegate,
             effect="write",
@@ -460,6 +502,9 @@ def register_main_tools(registry, tasks, memory, targets, router=None):
     )
 
     async def steer_task(args, binding):
+        handoffs = await tasks.db.call(lambda db: accepted_handoffs(db, binding.get("turnId")))
+        if args["taskId"] in handoffs:
+            raise DomainError("TASK_ALREADY_HANDED_OFF", 409)
         receipt = await tasks.revisions.request(
             binding["owner"],
             args["taskId"],
@@ -484,10 +529,13 @@ def register_main_tools(registry, tasks, memory, targets, router=None):
                 {
                     "taskId": {"type": "string", "minLength": 1, "maxLength": 200},
                     "revision": {"type": "integer", "minimum": 1},
-                    "requestComplete": {"type": "boolean"},
+                    "requestComplete": {
+                        "type": "boolean",
+                        "description": "Required: true after all requested parts are handled/delegated; false only while other parts remain. Never wait or poll for delegated work.",
+                    },
                     "text": {"type": "string", "minLength": 1},
                 },
-                ["taskId", "revision", "text"],
+                ["taskId", "revision", "text", "requestComplete"],
             ),
             steer_task,
             main=True,
@@ -513,8 +561,17 @@ def register_main_tools(registry, tasks, memory, targets, router=None):
     registry.add(
         Tool(
             "task_status",
-            "Read delegated task status in this conversation. Optionally filter by an exact taskId.",
-            object_schema({"taskId": {"type": "string", "minLength": 1, "maxLength": 200}}),
+            "Read delegated progress in this conversation. A progress question needs only state and essential blockers, not a repeated report. "
+            "Use includeResult=true only when the user asks for prior detailed/full results; the stored executor report is not fresh retrieval. Optionally filter by exact taskId.",
+            object_schema(
+                {
+                    "taskId": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "includeResult": {
+                        "type": "boolean",
+                        "description": "Return the full current-revision executor report for an explicit result/recap request; default false for progress. Use true also when earlier conversation references are needed; it restores full history.",
+                    },
+                }
+            ),
             status,
             main=True,
         )
