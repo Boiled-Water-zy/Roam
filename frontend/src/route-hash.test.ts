@@ -36,3 +36,15 @@ it('keeps the exact task browser target when terminal tabs synchronize the URL',
   expect(normalizeRoute(location.hash.replace(/^#\/?/, ''))).toBe('browser/task/browser-instance/exact-tab')
   expect(readTermTokens().active).toBe('session-a')
 })
+
+it('migrates plugin and settings capability links without losing their selection', () => {
+  expect(normalizeRoute('plugins')).toBe('capabilities/plugins')
+  expect(normalizeRoute('plugins/roam.cron')).toBe('capabilities/plugins/roam.cron')
+  for (const kind of ['skills', 'mcp', 'cli', 'tools']) expect(normalizeRoute('settings/agent/' + kind)).toBe('capabilities/' + kind)
+  expect(normalizeRoute('settings/agent/capabilities')).toBe('capabilities/skills')
+})
+
+it('moves professional agent links into capabilities and preserves the selected agent', () => {
+  expect(normalizeRoute('settings/agent/bin')).toBe('capabilities/agents')
+  expect(normalizeRoute('settings/agent/bin/codex')).toBe('capabilities/agents/codex')
+})
