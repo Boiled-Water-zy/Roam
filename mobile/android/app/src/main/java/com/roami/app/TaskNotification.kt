@@ -7,7 +7,7 @@ import android.content.Intent
 import android.os.Build
 import java.net.URLEncoder
 
-enum class TaskNoticeState { RUNNING, WAITING, FINISHED, FAILED }
+enum class TaskNoticeState { WAITING, FINISHED, FAILED }
 
 object TaskNotification {
     fun id(session: String): Int = session.hashCode()
@@ -20,7 +20,7 @@ object TaskNotification {
                 .putExtra("path", "/#/inbox/" + URLEncoder.encode(session, "UTF-8"))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val live = capsule || state == TaskNoticeState.RUNNING || state == TaskNoticeState.WAITING
+        val live = capsule || state == TaskNoticeState.WAITING
         val heading = if (state == TaskNoticeState.WAITING) ctx.getString(R.string.event_waiting_title, title) else title
         val detail = if (retry) ctx.getString(R.string.event_action_failed, body) else body
         val builder = Notification.Builder(ctx, if (capsule) EventService.CH_CAPSULE else EventService.CH_EVENTS)
@@ -35,7 +35,6 @@ object TaskNotification {
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setPriority(Notification.PRIORITY_HIGH)
         if (capsule && Build.VERSION.SDK_INT >= 36) builder.setShortCriticalText(ctx.getString(when (state) {
-            TaskNoticeState.RUNNING -> R.string.event_running_chip
             TaskNoticeState.WAITING -> R.string.event_waiting_chip
             TaskNoticeState.FINISHED -> R.string.event_finished_chip
             TaskNoticeState.FAILED -> R.string.event_failed_chip

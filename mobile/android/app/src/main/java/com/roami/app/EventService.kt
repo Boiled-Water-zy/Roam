@@ -232,7 +232,7 @@ class EventService : Service() {
                     snapshot.save(this, base)
                     StatusWidget.update(this)
                     updateAttention(snapshot.attentionCount)
-                    main.post { if (!stopped && base == statusBase) updateProgress(snapshot) }
+                    main.post { if (!stopped && base == statusBase) updateTaskCapsule(snapshot) }
                 }
             } catch (_: Exception) {
                 invalidateStatus()
@@ -262,19 +262,16 @@ class EventService : Service() {
         unfinishedAt = 0L
         if (WidgetSnapshot.clear(this)) StatusWidget.update(this)
         updateAttention(0)
-        main.post { capsuleState.onSnapshot(emptyList(), emptyList(), SystemClock.elapsedRealtime()); renderForeground() }
+        main.post { capsuleState.onSnapshot(emptyList(), SystemClock.elapsedRealtime()); renderForeground() }
     }
 
-    private fun updateProgress(snapshot: WidgetSnapshot) {
+    private fun updateTaskCapsule(snapshot: WidgetSnapshot) {
         val now = SystemClock.elapsedRealtime()
         recentlyCompleted.entries.removeAll { now - it.value > 30_000 }
-        val running = snapshot.runningItems.filter { it.name !in recentlyCompleted }.map {
-            CapsuleTask(it.name, it.label, getString(R.string.event_running_body), TaskNoticeState.RUNNING)
-        }
         val waiting = snapshot.waitingItems.filter { it.name !in recentlyCompleted }.map {
             CapsuleTask(it.name, it.label, getString(R.string.event_waiting_body), TaskNoticeState.WAITING)
         }
-        capsuleState.onSnapshot(running, waiting, now)
+        capsuleState.onSnapshot(waiting, now)
         renderForeground()
     }
 
