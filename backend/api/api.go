@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/ybz21/Roami/internal/session"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,13 +16,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"ttmux-web/internal/id"
-	"ttmux-web/internal/metadb"
-	"ttmux-web/project"
-	"ttmux-web/race"
-	"ttmux-web/search"
-	"ttmux-web/ttmux"
-	"ttmux-web/worktree"
+	"github.com/ybz21/Roami/backend/project"
+	"github.com/ybz21/Roami/backend/race"
+	"github.com/ybz21/Roami/backend/search"
+	"github.com/ybz21/Roami/backend/ttmux"
+	"github.com/ybz21/Roami/backend/worktree"
+	"github.com/ybz21/Roami/internal/id"
+	"github.com/ybz21/Roami/internal/metadb"
 )
 
 // labelOption 会话展示名所在的 tmux 用户选项（与 CLI 侧 runtime.LabelOption 同名，
@@ -124,7 +125,7 @@ func (a *API) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"authed": true, "browserHome": a.BrowserHome}})
 }
 
-// Info 透传 ttmux info，并补一个 metaDb 字段说明台账走的是库还是降级的 JSON。
+// Info 透传 roami session info，并补一个 metaDb 字段说明台账走的是库还是降级的 JSON。
 // **只增字段不改既有字段**，前端不用动；降级时用户能在界面上看见原因，
 // 而不是「项目卡为什么没有历史」查不出所以然。
 func (a *API) Info(c *gin.Context) {
@@ -251,9 +252,12 @@ func (a *API) NewSession(c *gin.Context) {
 }
 
 // newSession 建一个 detached 会话，返回会话名(= 会话 id)。
-// 走 CLI 的 `ttmux new --json` 而不是自己拼 tmux new-session：会话 id 的生成、
+// 走 CLI 的 `roami session new --json` 而不是自己拼 tmux new-session：会话 id 的生成、
 // @roam_name 的落地只有一份实现（CLI 侧），后端不再复制一遍。
 func (a *API) newSession(label, dir string) (string, error) {
+	if a.TT.Local() {
+		return a.TT.CreateSession(context.Background(), label, strings.TrimSpace(dir))
+	}
 	args := []string{"new", "--json", "--no-reuse", label}
 	if d := strings.TrimSpace(dir); d != "" {
 		args = append(args, "--dir", d)
@@ -328,7 +332,7 @@ func (a *API) RenameSession(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"name": sess, "label": label}})
 }
 
-// 走 ttmux kill --yes（非交互）：孤儿收养/meta 清理在 CLI 内完成；?cascade=1 级联杀子树。
+// 走 roami session kill --yes（非交互）：孤儿收养/meta 清理在 CLI 内完成；?cascade=1 级联杀子树。
 func (a *API) KillSession(c *gin.Context) {
 	name := a.sessionTarget(c)
 	args := []string{"kill", name, "--yes"}
@@ -342,17 +346,6 @@ func (a *API) KillSession(c *gin.Context) {
 }
 func (a *API) Capture(c *gin.Context) {
 	a.text(c, "capture", a.sessionTarget(c), "--lines", c.DefaultQuery("lines", "200"))
-}
-
-// 允许注入的具名按键（其余只允许单个字母/数字）。用于在专业渲染模式下响应 TUI 选择框。
-// C-c 是「强制中断」那一档：Esc 只回到 TUI 的输入行，卡在工具里的子进程（长跑的 bash、
-// 收不到响应的请求）压根没收到信号，得靠 ^C 才停得下来。
-var allowedKeys = map[string]bool{
-	"Up": true, "Down": true, "Left": true, "Right": true,
-	"Enter": true, "Escape": true, "Tab": true, "Space": true, "BSpace": true,
-	"C-c": true,
-	// BTab = Shift+Tab：Claude/Codex 用它轮换权限/审批模式，对话页的「+」菜单要发这一枚
-	"BTab": true,
 }
 
 // Keys POST /sessions/:name/keys —— 向会话注入原始按键（不追加回车）。
@@ -371,12 +364,7 @@ func (a *API) Keys(c *gin.Context) {
 	// =name: 精确匹配（send-keys 的 pane 目标对裸 =name 报 can't find pane）；走 ttmux 转发尊重 TMUX_BIN
 	args := []string{"send-keys", "-t", "=" + name + ":"}
 	for _, k := range b.Keys {
-		ok := allowedKeys[k]
-		if !ok && len(k) == 1 {
-			ch := k[0]
-			ok = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
-		}
-		if !ok {
+		if !session.ValidKey(k) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "BAD_KEY", "message": k}})
 			return
 		}
@@ -499,9 +487,10 @@ func (a *API) Spawn(c *gin.Context) {
 }
 
 // Env
-func (a *API) Env(c *gin.Context)       { a.json(c, "env", "--json") }
-func (a *API) EnvDelete(c *gin.Context) { a.text(c, "env", "rm", c.Param("key")) }
-func (a *API) EnvPush(c *gin.Context)   { a.text(c, "env", "push") }
+func (a *API) Env(c *gin.Context)            { a.json(c, "env", "--json") }
+func (a *API) EnvDelete(c *gin.Context)      { a.text(c, "env", "rm", c.Param("key")) }
+func (a *API) EnvPushPreview(c *gin.Context) { a.json(c, "env", "push", "--preview", "--json") }
+func (a *API) EnvPush(c *gin.Context)        { a.json(c, "env", "push", "--json") }
 func (a *API) EnvSet(c *gin.Context) {
 	var b struct {
 		Key   string `json:"key"`

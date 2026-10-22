@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"ttmux-web/internal/id"
-	"ttmux-web/internal/metadb"
+	"github.com/ybz21/Roami/internal/id"
+	"github.com/ybz21/Roami/internal/metadb"
 )
 
 // Prefs 是项目的 UI 偏好（PATCH /projects/:key/prefs 可改）。
@@ -66,6 +66,7 @@ type fileShape struct {
 
 // Store 单写者：所有变更持内存互斥锁，落盘 tmp+rename 原子替换（同 RaceStore 体例）。
 type Store struct {
+	dataDir string
 	mu      sync.Mutex
 	path    string            // 旧 JSON 台账；只在降级模式下写
 	db      *metadb.DB        // 直连模式下的真相源
@@ -80,7 +81,7 @@ type Store struct {
 // 换存储只换了 load/save 两端。这样 mergeInto/resolve/退场判定/60s 节流
 // 这些语义一行没动，出了问题也只可能出在持久化这一层。
 func NewStore(dataDir string, db *metadb.DB) *Store {
-	s := &Store{repos: map[string]*Entry{}, aliases: map[string]string{}, byDir: map[string]string{}, db: db}
+	s := &Store{dataDir: dataDir, repos: map[string]*Entry{}, aliases: map[string]string{}, byDir: map[string]string{}, db: db}
 	if db.OK() {
 		s.loadDB()
 		return s
@@ -395,6 +396,17 @@ func (s *Store) Entries() map[string]Entry {
 }
 
 // Dir 反查 id（或老 key）→ 目录。API 只接受在册 key，顺带杜绝任意路径探测。
+// Entry returns a copy and resolves historical project aliases without writing the catalog.
+func (s *Store) Entry(key string) (Entry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := s.resolve(key)
+	if k == "" {
+		return Entry{}, false
+	}
+	return *s.repos[k], true
+}
+
 func (s *Store) Dir(key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

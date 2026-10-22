@@ -10,7 +10,7 @@ cc-swarm 拿到的 `$ARGUMENTS` 通常是一句模糊的目标。第一件事**�
 读 `$ARGUMENTS`，再快速侦察项目本身（不要瞎猜）：
 
 ```bash
-ttmux ls                 # 已有哪些会话？是否已有人在做相关的事
+roami session ls                 # 已有哪些会话？是否已有人在做相关的事
 ```
 
 用 Read/Grep/Glob 或 Explore 子 agent 摸清：
@@ -39,7 +39,7 @@ ttmux ls                 # 已有哪些会话？是否已有人在做相关的�
 把目标固化成一份 markdown 规格，存到蜂群记忆里：
 
 ```
-~/.local/share/ttmux/cc-swarm/_spec.md
+~/.roami/cc-swarm/_spec.md
 ```
 
 格式：

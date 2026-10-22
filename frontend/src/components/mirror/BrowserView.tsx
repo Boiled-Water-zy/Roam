@@ -18,6 +18,8 @@ import {
   fmtRate, IconBtn, MirrorChrome, MirrorMenu, Omnibox, StatusChip, StreamControl, useFullscreen, useShelf, type Quality,
 } from './mirror'
 import { TabSheet, TabStrip, type TabInfo } from './browser-tabs'
+import { pollWhileVisible } from '../../visible-poll'
+import { connectBrowserStream } from './browser-stream'
 
 // 清晰度档位与手机页共用（mirror.tsx 的 QUALITY_OPTS），这里只有存盘的 key 不同
 const QKEY = 'ttmux.browser.quality'
@@ -60,7 +62,7 @@ function mergeTabs(prev: TabInfo[], incoming: TabInfo[]): TabInfo[] {
   const out: TabInfo[] = []
   for (const p of prev) {            // 1) 旧 tab 按原顺序保留，取最新标题/url
     const cur = byId.get(p.id)
-    if (cur) { out.push(cur); byId.delete(p.id) }
+    if (cur) { out.push({ ...p, ...cur }); byId.delete(p.id) }
   }
   for (const t of incoming) {        // 2) 新 tab 追加到右侧(按后端相对顺序)
     if (byId.has(t.id)) out.push(t)
@@ -68,7 +70,7 @@ function mergeTabs(prev: TabInfo[], incoming: TabInfo[]): TabInfo[] {
   return out
 }
 
-export default function BrowserView() {
+export default function BrowserView({ initialTarget = '', browserInstance = '' }: { initialTarget?: string; browserInstance?: string }) {
   const { message } = AntApp.useApp()
   const { t } = useI18n()
   // 收纳档位按**容器**宽度算（不是窗口）：这一页会被塞进分栏，那时窗口很宽而容器很窄。
@@ -97,14 +99,22 @@ export default function BrowserView() {
   useEffect(() => {
     try { localStorage.setItem('roam.browser.pinnedTabs', JSON.stringify([...pinnedTabs])) } catch { /* 当前页仍可固定 */ }
   }, [pinnedTabs])
+  const legacyPins = useRef(new Set(pinnedTabs))
   const displayTabs = [...tabs.filter((tb) => pinnedTabs.has(tb.id)), ...tabs.filter((tb) => !pinnedTabs.has(tb.id))]
-  const togglePin = (id: string) => setPinnedTabs((current) => {
-    const next = new Set(current)
-    if (next.has(id)) next.delete(id); else next.add(id)
-    return next
-  })
+  const changeTab = async (id: string, change: Partial<TabInfo>) => {
+    try {
+      await api('PATCH', `/browser/tabs/${id}`, change)
+      setTabs(current => current.map(tab => tab.id === id ? { ...tab, ...change } : tab))
+      if (change.pinned !== undefined) setPinnedTabs(current => { const next = new Set(current); if (change.pinned) next.add(id); else next.delete(id); return next })
+    } catch (error: any) { message.error(error.apiError?.code === 'BROWSER_TAB_BUSY' ? t('browser.tabBusy') : error.apiError?.code === 'BROWSER_TAB_BUDGET_EXCEEDED' ? t('browser.groupLimit') : error.message) }
+  }
+  const togglePin = (id: string) => { void changeTab(id, { pinned: !pinnedTabs.has(id) }) }
+  const changeOrigin = (id: string, origin: 'human' | 'agent') => { void changeTab(id, { origin }) }
   const tabsRef = useRef<TabInfo[]>([]) // 供 ws.onmessage 等闭包读到最新标签集（识别新开的那个）
-  const [target, setTarget] = useState('') // 当前镜像的标签页 id；空 = 第一个
+  const [target, setTarget] = useState(initialTarget)
+  const [expectedBrowser, setExpectedBrowser] = useState(browserInstance)
+  const expectedBrowserRef = useRef(expectedBrowser); expectedBrowserRef.current = expectedBrowser
+  const pinnedTarget = useRef(initialTarget)
   // 导航起始页地址（后端 /api/me 提供，形如 http://127.0.0.1:<port>/home）；
   // 新标签默认开它、可点「主页」回到它。默认值按当前端口兜底。
   const [home, setHome] = useState(`${location.protocol}//127.0.0.1:${location.port || '8080'}/home`)
@@ -151,8 +161,8 @@ export default function BrowserView() {
   // 后端广播 {type:'active'} 会自动切到 agent 正在操作的标签；用户在画面里点击/打字
   // 视为接管，自动切到手动模式。切回智能体模式只能靠主动点按钮——不设空闲自动恢复，
   // 模式要长期保持，不能自己漂移回去（人正盯着一个 agent 没打算离开的页面时尤其如此）。
-  const [followPaused, setFollowPaused] = useState(false)
-  const followPausedRef = useRef(false)
+  const [followPaused, setFollowPaused] = useState(!!initialTarget)
+  const followPausedRef = useRef(!!initialTarget)
 
   const fs = useFullscreen(rootRef)
 
@@ -200,33 +210,40 @@ export default function BrowserView() {
   const visibleTabs = (list: TabInfo[]) => list.filter((x) => !dismissedRef.current.has(x.id))
 
   // 拉取标签页列表（每 3s 刷新，反映 agent 自己开的标签页/标题变化）
-  const loadTabs = async () => {
+  const loadTabs = async (signal?: AbortSignal) => {
     try {
-      const r = await api('GET', '/browser/tabs')
+      const expected = expectedBrowserRef.current
+      const r = await api('GET', '/browser/tabs' + (expected ? '?expectedBrowser=' + encodeURIComponent(expected) : ''), undefined, { signal })
       const list: TabInfo[] = visibleTabs(r?.data || [])
+      for (const tab of list.filter(tab => legacyPins.current.has(tab.id))) {
+        await api('PATCH', `/browser/tabs/${tab.id}`, { pinned: true })
+        tab.pinned = true; legacyPins.current.delete(tab.id)
+      }
+      setPinnedTabs(new Set(list.filter(tab => tab.pinned).map(tab => tab.id)))
       setTabs((prev) => mergeTabs(prev, list)) // 稳定顺序，避免后端重排导致 tab 乱跳
-      // 当前 target 已不存在 → 切到第一个
-      setTarget((t) => (list.some((x) => x.id === t) ? t : (list[0]?.id || '')))
-    } catch {}
+      // 任务接管固定目标，消失时不切换到其他页面。
+      setTarget((current) => pinnedTarget.current && current === pinnedTarget.current ? current : list.some((item) => item.id === current) ? current : (list[0]?.id || ''))
+    } catch (error) { if (signal) throw error }
   }
   useEffect(() => {
-    loadTabs()
-    const t = setInterval(loadTabs, 3000)
-    return () => clearInterval(t)
+    const poll = pollWhileVisible(signal => loadTabs(signal), 3000)
+    return () => poll.stop()
   }, [])
 
   const newTab = async () => {
+    pinnedTarget.current = ''; setExpectedBrowser('')
     try {
       const known = new Set(tabs.map((t) => t.id)) // 记下创建前的 id，用于定位新开的那个
-      await api('POST', '/browser/tabs', { url: home }) // 新标签默认开导航起始页
+      await api('POST', '/browser/tabs', { url: home, origin: 'human' }) // 新标签默认开导航起始页
       const r = await api('GET', '/browser/tabs')
       const list: TabInfo[] = visibleTabs(r?.data || [])
       setTabs((prev) => mergeTabs(prev, list))
       const fresh = list.find((t) => !known.has(t.id)) // 真正新增的(在右侧)，而非后端顺序的末位
       setTarget(fresh?.id || list[list.length - 1]?.id || '')
-    } catch (e: any) { message.error(e.message) }
+    } catch (e: any) { message.error(e.apiError?.code === 'BROWSER_TAB_BUDGET_EXCEEDED' ? t('browser.groupLimit') : e.message) }
   }
   const closeTabs = async (ids: string[]) => {
+    if (ids.includes(pinnedTarget.current)) { pinnedTarget.current = ''; expectedBrowserRef.current = ''; setExpectedBrowser('') }
     await Promise.all(ids.map(async (id) => {
       try {
         await api('DELETE', `/browser/tabs/${id}`)
@@ -241,6 +258,17 @@ export default function BrowserView() {
   }
   const closeTab = (id: string) => closeTabs([id])
 
+  const reopenTab = async () => {
+    const previous = target
+    const address = tabs.find(tab => tab.id === previous)?.url
+    try {
+      const result = await api('POST', '/browser/tabs', { url: address && address !== 'about:blank' ? address : smartUrl(url || home), origin: 'human' })
+      if (!result?.data?.id) return
+      switchTab(result.data.id)
+      await closeTab(previous)
+    } catch (error: any) { message.error(error.apiError?.code === 'BROWSER_TAB_BUDGET_EXCEEDED' ? t('browser.groupLimit') : error.message) }
+  }
+
   // 地址栏跟随当前标签页真实 URL（聚焦编辑时不覆盖；about:blank 显示为空）
   useEffect(() => {
     if (addrFocused.current) return
@@ -249,18 +277,20 @@ export default function BrowserView() {
   }, [target, tabs])
 
   // 切到手动模式：人正在手动操作（切标签/点镜像页面），此时后端广播的 active 不该把
-  // 面板拽走。只能靠主动点"智能体模式"按钮切回去，不会自己超时恢复。
+  // 面板拽走。通过更多菜单恢复自动跟随，不会自行超时恢复。
   const pauseFollow = () => {
     followPausedRef.current = true
     setFollowPaused(true)
   }
   const resumeFollow = () => {
+    pinnedTarget.current = ''; setExpectedBrowser('')
     followPausedRef.current = false
     setFollowPaused(false)
   }
 
   // 切换标签：镜像该 tab + 在 Chrome 里把它前置（让 agent 前台焦点一致）
   const switchTab = (id: string) => {
+    pinnedTarget.current = ''; setExpectedBrowser('')
     pauseFollow() // 人手动选的，别被下一条 active 广播立刻拽回去
     setTarget(id)
     api('POST', `/browser/tabs/${id}/activate`).catch(() => {})
@@ -276,6 +306,7 @@ export default function BrowserView() {
         const list: TabInfo[] = visibleTabs(r?.data || [])
         const fresh = list.find((t) => !known.has(t.id))
         if (fresh) {
+          if (Date.now() - lastInputTouch.current < 5000) { await api('PATCH', `/browser/tabs/${fresh.id}`, { origin: 'human' }); fresh.origin = 'human' }
           setTabs((prev) => mergeTabs(prev, list))
           switchTab(fresh.id) // 切镜像 + 前置，画面随之跳到新标签
           return
@@ -286,7 +317,12 @@ export default function BrowserView() {
     }
   }
 
+  const lastInputTouch = useRef(0)
   const send = (o: any) => {
+    if (['mouse', 'wheel', 'key', 'nav'].includes(o.type) && target && Date.now() - lastInputTouch.current > 5000) {
+      lastInputTouch.current = Date.now()
+      void api('POST', `/browser/tabs/${target}/activate`).catch(() => {})
+    }
     // DuplexTransport.send 对 p2p 自带 open-before-send 排队、对 frp 内部判 readyState，
     // 这里直接发即可（未连时 frp 分支静默丢弃，与迁移前 ws.readyState 守卫等价）。
     tpRef.current?.send(JSON.stringify(o))
@@ -336,42 +372,43 @@ export default function BrowserView() {
   // control / target 变化才重连；画质切换【不重连】(连上后发 quality 消息，见下面 changeQuality)，
   // 设备/尺寸切换也不重连(发 emulate 消息)。重连会重设 device metrics、首帧畸形 → 画面跳/页面忽大小。
   useEffect(() => {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    if (!imgRef.current) return
+    setConnected(false)
+    setHealthMsg('')
     const params = new URLSearchParams()
     if (control) params.set('control', '1')
     if (quality === 'auto') params.set('auto', '1') // 仅首连/换 target 时用来定初始档；之后靠消息切
     else params.set('q', String(quality))
     if (target) params.set('target', target)
+    if (expectedBrowser) params.set('expectedBrowser', expectedBrowser)
     // 通用传输 Phase 1b：镜像走 media PC 的不可靠 DataChannel；media 未连/P2P 不可用 → 回退
     // 到原 /api/browser/stream WS（frpUrl），行为与迁移前逐字节一致。p2p 分支把 query 里的
     // params 经 init 握手带给后端（原本靠 WS query 传）。
     const frpUrl = nodeWs(`/browser/stream?${params}`)
-    const tp = connect('screencast', { frpUrl, initParams: Object.fromEntries(params) })
+    const tp = connectBrowserStream(imgRef.current,
+      () => connect('screencast', { frpUrl, initParams: Object.fromEntries(params) }),
+      ({ w, h, bytes }) => {
+        setConnected(true)
+        setHealthMsg('')
+        sizeRef.current = { w, h }
+        setFrame(frame => frame.w === w && frame.h === h ? frame : { w, h })
+        bytesRef.current += bytes
+        framesRef.current++
+      })
     tpRef.current = tp
     lastEmuRef.current = '' // 新连接：后端会话尚无视口覆盖，onopen 必须强制发一次 emulate
-    let objURL: string | null = null
     // 连上（frp=WS open / p2p=DataChannel open）即同步当前设备/尺寸，语义等价迁移前 ws.onopen。
-    tp.onopen = () => { setConnected(true); setHealthMsg(''); sendEmulate(true) }
+    tp.onopen = () => { setConnected(false); sendEmulate(true) }
     tp.onmessage = (data) => {
-      // 二进制 = 一帧：[w:u16][h:u16][seq:u16][jpeg...]；显示后回 ack 归还信用
-      if (typeof data !== 'string') {
-        if (!imgRef.current) return
-        const buf = data as ArrayBuffer
-        const dv = new DataView(buf)
-        const w = dv.getUint16(0, true), h = dv.getUint16(2, true), seq = dv.getUint16(4, true)
-        sizeRef.current = { w: w || 1280, h: h || 800 }
-        // 尺寸变了才 setState（每帧都设会把整棵树重渲染成一秒几十次）
-        setFrame((f) => (f.w === sizeRef.current.w && f.h === sizeRef.current.h ? f : { ...sizeRef.current }))
-        bytesRef.current += buf.byteLength
-        framesRef.current++
-        if (objURL) URL.revokeObjectURL(objURL)
-        objURL = URL.createObjectURL(new Blob([new Uint8Array(buf, 6)], { type: 'image/jpeg' }))
-        imgRef.current.src = objURL
-        tp.send(JSON.stringify({ type: 'ack', n: seq }))
+      if (typeof data !== 'string') return
+      const msg = JSON.parse(data)
+      if (msg.type === 'error') {
+        const reason = msg.msg === 'BROWSER_RESOURCE_CHANGED' ? t('agent.task.browserChanged') : msg.msg === 'BROWSER_TARGET_UNAVAILABLE' ? t('agent.task.tabUnavailable') : msg.msg === 'BROWSER_PAGE_UNRESPONSIVE' ? t('browser.pageUnresponsive') : msg.msg
+        setHealthMsg(reason)
+        setConnected(false)
+        if (expectedBrowser && (msg.msg === 'BROWSER_RESOURCE_CHANGED' || msg.msg === 'BROWSER_TARGET_UNAVAILABLE')) tp.close()
         return
       }
-      const msg = JSON.parse(data)
-      if (msg.type === 'error') { message.error(msg.msg); return }
       if (msg.type === 'pong') { setLatency(Math.round(performance.now() - msg.t)); return }
       if (msg.type === 'level') { setLevelName(msg.name || ''); return }
       // 被镜像页打开了新窗口/标签 → 镜像跟过去（点 target=_blank 链接、window.open 等）
@@ -404,14 +441,16 @@ export default function BrowserView() {
       setBw(bytesRef.current); setFps(framesRef.current)
       bytesRef.current = 0; framesRef.current = 0
     }, 1000)
+    const visible = () => { if (document.visibilityState === 'visible') send({ type: 'refresh' }) }
+    document.addEventListener('visibilitychange', visible)
     return () => {
       clearInterval(ping); clearInterval(meter)
-      if (objURL) URL.revokeObjectURL(objURL)
-      tp.onmessage = () => {}; tp.onclose = () => {} // 卸载后忽略在途回调
+      document.removeEventListener('visibilitychange', visible)
+      tp.onopen = () => {}; tp.onmessage = () => {}; tp.onclose = () => {}
       tp.close()
       if (tpRef.current === tp) tpRef.current = null
     }
-  }, [control, target]) // 画质/device 切换都不重连，靠 quality / emulate 消息现场切换
+  }, [control, target, expectedBrowser]) // 画质/device 切换都不重连，靠 quality / emulate 消息现场切换
 
   // 设备切换：在现有连接上发 emulate（同一 CDP 会话 set/clear），不重连。
   // 观看区尺寸【不在依赖里】——远端视口不跟着窗格走，拖分隔条不该动远端一根汗毛。
@@ -657,6 +696,8 @@ export default function BrowserView() {
   // ⋯ 菜单：低频动作一律进这里，主行永远只有四个目标（设计 17 §3）。
   // 窄档下把「前进 / 主页」也收进来——它们是次高频，后退才是必须留在外面的那一枚。
   const menuItems: MenuProps['items'] = [
+    { key: 'follow', icon: followPaused ? <BotIcon size={15} /> : <UserIcon size={15} />,
+      label: t(followPaused ? 'browser.resumeFollow' : 'browser.pauseFollow'), onClick: () => followPaused ? resumeFollow() : pauseFollow() },
     // 全屏摆在最前：远端视口固定之后，「黑边多厚」只取决于观看区多大，铺满显示器就是把黑边挤没
     ...(fs.supported ? [
       { key: 'fs', icon: fs.on ? <ExitFullscreenIcon size={15} /> : <FullscreenIcon size={15} />,
@@ -665,7 +706,7 @@ export default function BrowserView() {
     ] : []),
     ...(shelf === 'narrow' ? [
       { key: 'forward', icon: <ChevronRight />, label: t('file.forward'), onClick: () => act('forward') },
-      { key: 'home', icon: <HomeIcon size={15} />, label: t('browser.home'), onClick: () => act('navigate', { url: home }) },
+      { key: 'home', icon: <HomeIcon size={15} />, label: t('browser.home'), onClick: () => act('navigate', { url: home, origin: 'human' }) },
       { type: 'divider' as const, key: 'd1' },
     ] : []),
     { key: 'rotate', icon: <RotateScreenIcon />, label: rotation ? `${t('browser.rotateTitle')} ${rotation}°` : t('browser.rotateTitle'), onClick: rotate },
@@ -675,7 +716,7 @@ export default function BrowserView() {
     { key: 'newpage', icon: <OpenInIcon size={15} />, label: t('mirror.openInNewPage'),
       onClick: () => window.open('/#/browser?terms=none', '_blank') },
     { type: 'divider' as const, key: 'd2' },
-    { key: 'newtab', icon: <PlusIcon />, label: t('browser.newTab'), onClick: newTab },
+    { key: 'newtab', icon: <PlusIcon />, label: t('browser.newHumanTab'), onClick: newTab },
   ]
 
   const deviceName = device ? t(DEVICES.find((d) => d.key === device)?.nameKey || 'browser.device.desktop') : t('browser.device.desktop')
@@ -708,7 +749,7 @@ export default function BrowserView() {
   return (
     // 背景色写在根上：全屏时这一块就是整块屏幕，缺省背景会在工具行外露出一圈白。
     // position: relative 给下面 getPopupContainer 当定位基准。
-    <div ref={rootRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)' }}>
+    <div ref={rootRef} style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-base)' }}>
       {/* 浮层（⋯ 菜单/标签/设备下拉/画质气泡）挂进这一块，而不是 document.body：全屏时只有
           全屏元素的子树会被画出来，挂 body 上的浮层在全屏下**看不见也点不着**——实测点了
           「全屏」再开 ⋯ 菜单，菜单在 DOM 里、屏幕上没有，连「退出全屏」都够不着。 */}
@@ -717,11 +758,9 @@ export default function BrowserView() {
             从前是五行散装控件——「前往」实心按钮比地址栏还抢戏、四档清晰度常驻一整行、
             「外部打开」被挤成第五行的孤儿。现在只有一个主角：omnibox。 */}
         {shelf !== 'narrow' && (
-          <TabStrip tabs={displayTabs} active={target} pinned={pinnedTabs} onPin={togglePin}
+          <TabStrip tabs={displayTabs} active={target} pinned={pinnedTabs} onPin={togglePin} onOrigin={changeOrigin}
             onSelect={switchTab} onClose={closeTab} onCloseMany={closeTabs} onAdd={newTab}
-            extra={<StatusChip icon={followPaused ? <UserIcon size={12} /> : <BotIcon size={12} />}
-              strong={followPaused ? t('browser.followModeHuman') : t('browser.followModeAgent')}
-              active={!followPaused} onClick={() => (followPaused ? resumeFollow() : pauseFollow())} />} />
+            onGroupChange={pauseFollow} onOpenTabs={() => setTabsOpen(true)} />
         )}
         <MirrorChrome
           chromeRef={shelfRef}
@@ -730,7 +769,7 @@ export default function BrowserView() {
             {shelf !== 'narrow' && <>
               <IconBtn icon={<ChevronRight size={17} />} label={t('file.forward')} onClick={() => act('forward')} />
               <IconBtn icon={<RefreshIcon size={16} />} label={t('common.refresh')} onClick={() => act('reload')} />
-              <IconBtn icon={<HomeIcon size={16} />} label={t('browser.home')} onClick={() => act('navigate', { url: home })} />
+              <IconBtn icon={<HomeIcon size={16} />} label={t('browser.home')} onClick={() => act('navigate', { url: home, origin: 'human' })} />
             </>}
             <Omnibox
               value={url}
@@ -753,15 +792,12 @@ export default function BrowserView() {
             <MirrorMenu items={menuItems} label={t('common.more')} />
           </>}
           chips={shelf === 'narrow' ? <>
-            <StatusChip icon={followPaused ? <UserIcon size={12} /> : <BotIcon size={12} />}
-              strong={followPaused ? t('browser.followModeHuman') : t('browser.followModeAgent')}
-              active={!followPaused} onClick={() => (followPaused ? resumeFollow() : pauseFollow())} />
             {deviceChip}
           </> : undefined}
         />
-        {/* 手机标签：横条在 360 上放不下第三枚，换成「⧉N + 抽屉」（设计 17 §4） */}
-        <TabSheet open={tabsOpen} tabs={displayTabs} active={target} pinned={pinnedTabs}
-          onPin={togglePin} onCloseMany={closeTabs} onClose={() => setTabsOpen(false)}
+        {/* 窄档使用全屏目录，桌面从右侧展开。 */}
+        <TabSheet compact={shelf === 'narrow'} open={tabsOpen} tabs={displayTabs} active={target} pinned={pinnedTabs}
+          onPin={togglePin} onOrigin={changeOrigin} onCloseMany={closeTabs} onClose={() => setTabsOpen(false)}
           onSelect={(id) => { switchTab(id); setTabsOpen(false) }}
           onCloseTab={closeTab} onAdd={() => { newTab(); setTabsOpen(false) }} />
         <style>{`
@@ -778,7 +814,7 @@ export default function BrowserView() {
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
           style={{
-            flex: 1, minHeight: 0, background: '#000', overflow: 'hidden', position: 'relative',
+            flex: 1, minHeight: 0, background: 'var(--bg-base)', overflow: 'hidden', position: 'relative',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: control ? 'default' : 'not-allowed', outline: 'none', touchAction: 'none',
           }}
@@ -833,16 +869,19 @@ export default function BrowserView() {
             <span key={p.id} className="bv-ripple" style={{ left: p.x, top: p.y }} />
           ))}
           {/* 连不上且后端报了原因：覆盖一层提示，省得用户对着黑屏猜 */}
-          {!connected && healthMsg && (
+          {!connected && (
             <div style={{
               position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              padding: 24, pointerEvents: 'none',
+              padding: 'var(--sp-5)', pointerEvents: 'none',
             }}>
               <div style={{
-                maxWidth: 520, padding: 'var(--sp-3) var(--sp-4)', borderRadius: 'var(--r-sm)', background: 'rgba(0,0,0,.72)',
-                border: '1px solid var(--danger-border)', color: 'var(--danger)', fontSize: 'var(--fs-sm)', lineHeight: 1.6, textAlign: 'center',
+                maxWidth: '100%', padding: 'var(--sp-3) var(--sp-4)', borderRadius: 'var(--r-sm)', background: 'var(--bg-container)',
+                color: healthMsg ? 'var(--danger)' : 'var(--text-dim)', fontSize: 'var(--fs-sm)', textAlign: 'center', pointerEvents: 'auto',
               }}>
-                {t('browser.launchFailed')}<br />{healthMsg}
+                {healthMsg || t('browser.waitingFrame')}
+                {healthMsg === t('browser.pageUnresponsive') && !expectedBrowser && (
+                  <div style={{ marginTop: 'var(--sp-3)' }}><button type="button" className="tt-act" onClick={reopenTab}>{t('browser.reopenTab')}</button></div>
+                )}
               </div>
             </div>
           )}

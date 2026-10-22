@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"ttmux-web/auth"
-	"ttmux-web/cluster/hub"
+	"github.com/ybz21/Roami/backend/auth"
+	"github.com/ybz21/Roami/backend/cluster/hub"
 )
 
 // NewHub 装配**中心** 的 Gin 引擎。它**不复用 New()**——不构造业务 runtime、
@@ -60,6 +60,6 @@ func NewHub(cfg Config) *gin.Engine {
 	ng := r.Group("/n/:nodeId", a.Middleware())
 	ng.Any("/*path", brk.ProxyNode)
 
-	mountWeb(r, cfg.FrontendDir)
+	mountWeb(r, cfg.FrontendDir, nil)
 	return r
 }

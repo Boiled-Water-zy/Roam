@@ -176,6 +176,63 @@ describe('FileBrowser folder context menu', () => {
   })
 })
 
+describe('FileBrowser file moves', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('ttmux-locale', 'zh-CN')
+    localStorage.setItem('ttmux.fileBrowseMode', 'tree')
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }))
+  })
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+  it('moves a dragged file into a folder and refreshes the expanded tree', async () => {
+    let moved = false
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/api/file/move')) {
+        expect(init?.method).toBe('POST')
+        expect(JSON.parse(String(init?.body))).toEqual({ path: '/workspace/report.md', target: '/workspace/folder' })
+        moved = true
+        return jsonResponse({ data: { path: '/workspace/folder/report.md' } })
+      }
+      if (url.includes('/api/files?')) {
+        const path = new URL(url, 'http://x').searchParams.get('path')
+        return jsonResponse({ data: {
+          path,
+          parent: path === '/workspace' ? '/' : '/workspace',
+          entries: path === '/workspace'
+            ? [{ name: 'folder', dir: true, size: 0, mtime: 1, ctime: 1 }, ...(!moved ? [{ name: 'report.md', dir: false, size: 1, mtime: 1, ctime: 1 }] : [])]
+            : moved ? [{ name: 'report.md', dir: false, size: 1, mtime: 1, ctime: 1 }] : [],
+        } })
+      }
+      return jsonResponse({ data: {} })
+    }))
+    render(<I18nProvider><AntApp><FileBrowser dir="/workspace" layout="dock" /></AntApp></I18nProvider>)
+    const folder = (await screen.findByText('folder')).closest('.cc-filerow')!
+    fireEvent.click(folder)
+    const source = (await screen.findByText('report.md')).closest('.cc-filerow')!
+    const values = new Map<string, string>()
+    const dataTransfer = {
+      types: [] as string[],
+      setData(type: string, value: string) { values.set(type, value); this.types.push(type) },
+      getData(type: string) { return values.get(type) || '' },
+      effectAllowed: 'uninitialized',
+      dropEffect: 'none',
+    }
+    fireEvent.dragStart(source, { dataTransfer })
+    expect(dataTransfer.effectAllowed).toBe('copyMove')
+    fireEvent.dragOver(folder, { dataTransfer })
+    expect(folder.classList.contains('tt-file-drop-target')).toBe(true)
+    fireEvent.drop(folder, { dataTransfer })
+    await waitFor(() => expect(moved).toBe(true))
+    await waitFor(() => expect(source.isConnected).toBe(false))
+    expect(screen.getByText('report.md')).toBeTruthy()
+  })
+})
+
 // 对话里点 Read/Edit 的文件名 → 在这个浏览器里打开它。
 // 之前这条路走的是「跳去文件页」，人被带离会话页，看到的是文件页左边那棵树。
 describe('FileBrowser openRequest（对话里点文件名）', () => {

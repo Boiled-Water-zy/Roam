@@ -6,6 +6,7 @@
 package server
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"log"
@@ -20,17 +21,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"ttmux-web/api"
-	"ttmux-web/auth"
-	"ttmux-web/browser"
-	"ttmux-web/cluster/node"
-	"ttmux-web/config"
-	"ttmux-web/home"
-	"ttmux-web/p2p"
-	"ttmux-web/phone"
-	"ttmux-web/pty"
-	"ttmux-web/stream"
-	"ttmux-web/ttmux"
+	"github.com/ybz21/Roami/backend/api"
+	"github.com/ybz21/Roami/backend/auth"
+	"github.com/ybz21/Roami/backend/browser"
+	"github.com/ybz21/Roami/backend/cluster/node"
+	"github.com/ybz21/Roami/backend/config"
+	"github.com/ybz21/Roami/backend/home"
+	"github.com/ybz21/Roami/backend/p2p"
+	"github.com/ybz21/Roami/backend/phone"
+	"github.com/ybz21/Roami/backend/pty"
+	"github.com/ybz21/Roami/backend/stream"
+	"github.com/ybz21/Roami/backend/ttmux"
 )
 
 //go:embed fallback.html
@@ -102,6 +103,8 @@ func New(cfg Config) *gin.Engine {
 	// 无 Cache-Control 的 GET 做启发式缓存，导致文件实时重载轮询的 /file/stat 一直拿到旧 mtime
 	// → 不刷新。统一禁缓存，兜底前端的 cache:no-store。
 	g.Use(func(c *gin.Context) { c.Header("Cache-Control", "no-store") })
+	mountAgentRuntime(g, cfg)
+	go agentDeliveryLoop(context.Background(), cfg, h)
 	{
 		g.GET("/cluster/config", cl.Get) // 当前角色 + 接入状态 + 本机局域网地址
 		g.PUT("/cluster/config", cl.Put) // 写回 config.yaml 的 cluster 段（令牌只写不读）
@@ -110,13 +113,17 @@ func New(cfg Config) *gin.Engine {
 		g.GET("/me", h.Me)
 		g.GET("/info", h.Info)
 		g.GET("/agent/capabilities", h.AgentCapabilities)
+		g.GET("/agent/professional", h.ProfessionalAgents)
+		g.POST("/agent/professional/:kind/install", h.InstallProfessionalAgent)
+		g.POST("/agent/professional/:kind/check", h.CheckProfessionalAgent)
 
 		g.GET("/fs", h.FS)
-		g.GET("/files", h.Files)                // 文件侧栏：列目录
-		g.GET("/file", h.File)                  // 文件侧栏：读文件
-		g.POST("/file/save", h.FileSave)        // 文件侧栏：编辑器保存（覆盖写入既有文件）
-		g.GET("/file/search", h.FileSearch)     // 文件侧栏：从当前目录递归按文件名搜索
-		g.GET("/file/raw", h.FileRaw)           // 文件侧栏：原始字节（图片预览 / ?dl=1 下载）
+		g.GET("/files", h.Files)            // 文件侧栏：列目录
+		g.GET("/file", h.File)              // 文件侧栏：读文件
+		g.POST("/file/save", h.FileSave)    // 文件侧栏：编辑器保存（覆盖写入既有文件）
+		g.GET("/file/search", h.FileSearch) // 文件侧栏：从当前目录递归按文件名搜索
+		g.GET("/file/raw", h.FileRaw)       // 文件侧栏：原始字节（图片预览 / ?dl=1 下载）
+		g.HEAD("/file/serve/*path", h.FileServe)
 		g.GET("/file/serve/*path", h.FileServe) // 文件侧栏：HTML 预览（绝对路径进 URL，令同目录相对引用可解析）
 		g.GET("/file/preview", h.FilePreview)   // 文件侧栏：Office 转 PDF 预览
 		g.GET("/file/stat", h.FileStat)
@@ -157,7 +164,8 @@ func New(cfg Config) *gin.Engine {
 		g.POST("/file/touch", h.FileTouch) // 文件侧栏：在指定目录新建空文件
 		g.POST("/upload", h.Upload)        // 上传文件到指定目录（拖拽到对话框 / 文件侧栏）
 
-		g.GET("/git/status", h.GitStatus)    // Git 面板：当前工作目录所属仓库状态
+		g.GET("/git/status", h.GitStatus) // Git 面板：当前工作目录所属仓库状态
+		g.POST("/git/initialize", h.GitInitialize)
 		g.GET("/git/diff", h.GitDiff)        // Git 面板：单文件差异
 		g.POST("/git/stage", h.GitStage)     // 暂存
 		g.POST("/git/unstage", h.GitUnstage) // 取消暂存
@@ -222,8 +230,10 @@ func New(cfg Config) *gin.Engine {
 		g.GET("/sessions/:name/transcript", h.ClaudeTranscript)      // 读 claude 对话记录
 		g.GET("/sessions/:name/codex", h.CodexStatus)                // 检测是否在跑 codex
 		g.GET("/sessions/:name/codex-transcript", h.CodexTranscript) // 读 codex 对话记录
-		g.GET("/sessions/:name/panes/active", h.ActivePane)          // 活动 pane 几何+cwd+前台进程（危险操作目标可视化）
-		g.POST("/sessions/:name/panes/:paneId/close", h.ClosePane)   // 结构化关闭 pane（不走 confirm-before 按键路径）
+		g.GET("/sessions/:name/opencode", h.OpenCodeStatus)
+		g.GET("/sessions/:name/opencode-transcript", h.OpenCodeTranscript)
+		g.GET("/sessions/:name/panes/active", h.ActivePane)        // 活动 pane 几何+cwd+前台进程（危险操作目标可视化）
+		g.POST("/sessions/:name/panes/:paneId/close", h.ClosePane) // 结构化关闭 pane（不走 confirm-before 按键路径）
 
 		g.GET("/tasks", h.Tasks)
 		g.POST("/tasks", h.Spawn)
@@ -307,6 +317,7 @@ func New(cfg Config) *gin.Engine {
 		g.PUT("/env", h.EnvSet)
 		g.DELETE("/env/:key", h.EnvDelete)
 		g.POST("/env/push", h.EnvPush)
+		g.GET("/env/push", h.EnvPushPreview)
 
 		g.GET("/speech/config", h.GetSpeechConfig)       // 语音识别(ASR)服务商配置
 		g.PUT("/speech/config", h.SetSpeechConfig)       //
@@ -316,7 +327,7 @@ func New(cfg Config) *gin.Engine {
 
 		g.POST("/password", a.ChangePassword) // 设置页改密（校验旧口令）→ /api/password
 
-		g.GET("/2fa/qr", a.TOTPQR)            // 当前状态 + 密钥二维码
+		g.POST("/2fa/qr", a.TOTPQR)           // 当前状态 + 密钥二维码
 		g.GET("/2fa/gen", a.TOTPGen)          // 生成新密钥（开启前扫码用）
 		g.POST("/2fa/enable", a.TOTPEnable)   // 确认动态码后开启
 		g.POST("/2fa/disable", a.TOTPDisable) // 关闭
@@ -327,6 +338,7 @@ func New(cfg Config) *gin.Engine {
 		g.GET("/browser/tabs", browser.Tabs)      // 标签页：列出
 		g.POST("/browser/tabs", browser.NewTab)   // 标签页：新建
 		g.DELETE("/browser/tabs/:id", browser.CloseTab)
+		g.PATCH("/browser/tabs/:id", browser.UpdateTab)
 		g.POST("/browser/tabs/:id/back", browser.TabBack)         // 后退
 		g.POST("/browser/tabs/:id/forward", browser.TabForward)   // 前进
 		g.POST("/browser/tabs/:id/reload", browser.TabReload)     // 刷新
@@ -369,7 +381,9 @@ func New(cfg Config) *gin.Engine {
 		g.GET("/logs/:name", hub.Logs)
 	}
 
-	mountWeb(r, cfg.FrontendDir)
+	mountWeb(r, cfg.FrontendDir, func(c *gin.Context) bool {
+		return serveFilePath(c, a.Middleware(), h)
+	})
 	return r
 }
 
@@ -561,7 +575,7 @@ func olderAsset(frontendDir, rel string) string {
 	return ""
 }
 
-func mountWeb(r *gin.Engine, frontendDir string) {
+func mountWeb(r *gin.Engine, frontendDir string, fileFallback func(*gin.Context) bool) {
 	indexPath := filepath.Join(frontendDir, "index.html")
 	useReact := fileExists(indexPath)
 
@@ -628,6 +642,9 @@ func mountWeb(r *gin.Engine, frontendDir string) {
 	}
 	r.GET("/", serve)
 	r.NoRoute(func(c *gin.Context) {
+		if fileFallback != nil && fileFallback(c) {
+			return
+		}
 		p := c.Request.URL.Path
 		if strings.HasPrefix(p, "/api") {
 			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "NOT_FOUND"}})

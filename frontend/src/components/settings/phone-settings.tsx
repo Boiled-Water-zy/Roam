@@ -1,3 +1,4 @@
+import { useSettingsRead } from './settings-read'
 // 手机/Android 后端配置：本机模拟器(AVD) / 远程设备 / 本机真机 三选一 + 设备列表(点一下换目标)。
 // 三档的分界线是「谁能起停它」：模拟器能起能停能新建，远程只能连断，真机只能连。
 // Android 与 iOS 互斥（active 决定哪个驱动镜像页），未装依赖时开关会先自动装。
@@ -32,13 +33,16 @@ export function PhoneSettings() {
 
   const loadStatus = () => api('GET', '/phone/status').then((r) => { if (r?.data) setStatus(r.data) }).catch(() => {})
   const loadDevices = (p: 'android' | 'ios') => listPhoneDevices(p).then((list) => setDevs((s) => ({ ...s, [p]: list })))
-  const loadPlatforms = () => api('GET', '/phone/platforms').then((r) => { if (r?.data) setPlat({ android: { installed: !!r.data.android?.installed }, ios: { installed: !!r.data.ios?.installed, supported: !!r.data.ios?.supported } }) }).catch(() => {})
+  const readState = useSettingsRead(async () => {
+    const [config, platforms] = await Promise.all([api('GET', '/phone/config'), api('GET', '/phone/platforms')])
+    setCfg({ ...PHONE_DEFAULT, ...config.data, android: { ...PHONE_DEFAULT.android, ...config.data.android }, ios: { ...PHONE_DEFAULT.ios, ...config.data.ios } })
+    setPlat({ android: { installed: !!platforms.data.android?.installed }, ios: { installed: !!platforms.data.ios?.installed, supported: !!platforms.data.ios?.supported } })
+    await Promise.all([loadStatus(), loadDevices('android'), loadDevices('ios')])
+  })
   useEffect(() => {
-    api('GET', '/phone/config').then((r) => { if (r?.data) setCfg({ ...PHONE_DEFAULT, ...r.data, android: { ...PHONE_DEFAULT.android, ...r.data.android }, ios: { ...PHONE_DEFAULT.ios, ...r.data.ios } }) }).catch(() => {})
-    loadPlatforms(); loadStatus(); loadDevices('android'); loadDevices('ios')
     const iv = setInterval(loadStatus, 3000) // 状态灯后台自动刷新
     // 设备列表也自动刷：插上 USB 真机 / 起了模拟器之后不该还要人去点「刷新设备」。
-    const dv = setInterval(() => { loadDevices('android'); loadDevices('ios') }, 6000)
+    const dv = setInterval(() => { void loadDevices('android').catch(() => {}); void loadDevices('ios').catch(() => {}) }, 6000)
     return () => { clearInterval(iv); clearInterval(dv) }
   }, [])
 
@@ -49,7 +53,7 @@ export function PhoneSettings() {
 
   // 开关：开=激活(互斥+未装先装)；关=未启用。
   const toggle = async (p: 'android' | 'ios', on: boolean) => {
-    if (busy || installing) return
+    if (busy || installing || (p === 'ios' && !plat.ios.supported)) return
     if (!on) { if (cfg.active === p) persist({ ...cfgRef.current, active: '' }); return }
     if (!plat[p].installed) {
       setInstalling(p); setLog('')
@@ -154,13 +158,13 @@ export function PhoneSettings() {
     return (
       <Card size="small" title={
         <Space align="center">
-          <Switch checked={active} loading={installing === p} onChange={(on) => toggle(p, on)} />
+          <Switch aria-label={t('phone.platform.' + p)} checked={active} disabled={!sup || !!busy || !!installing} loading={installing === p} onChange={(on) => toggle(p, on)} />
           <b>{t('phone.platform.' + p)}</b>
           <Tag color={inst ? 'green' : 'default'}>{inst ? t('phone.installedTag') : t('phone.notInstalled')}</Tag>
           {p === 'ios' && !sup && <span style={dim}>{t('phone.iosMacOnly')}</span>}
         </Space>
       }>
-        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+        {!sup ? <p>{t('phone.iosUnsupported')}</p> : <Space direction="vertical" size={10} style={{ width: '100%' }}>
           {/* Android 没有「来源」这一档：设备列表就是选择器，来源由所选设备的形状定
               （后端本来就按 serial 形状判）。两处并存时它们互相打架——选了「本机模拟器」，
               列表里却照样列着 USB 真机，而那个分段实际只控制「有没有启动按钮」。
@@ -322,11 +326,12 @@ export function PhoneSettings() {
               )}
             </>
           ) : <span style={dim}>{t('phone.enableHint')}</span>}
-        </Space>
+        </Space>}
       </Card>
     )
   }
 
+  if (readState) return readState
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       {renderCard('android')}

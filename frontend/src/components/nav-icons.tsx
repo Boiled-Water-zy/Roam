@@ -1,3 +1,4 @@
+import { ChecklistIcon } from '../icons'
 // 侧栏/底栏导航的图标集：路由 key → 图标，成组只服务导航，所以单独放一处。
 //
 // 画法与 icons.tsx 一致（24 网格、currentColor 描边、无 emoji）。svg() 只在本文件内用——
@@ -10,6 +11,7 @@ const svg = (paths: any) => (
     strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths}</svg>
 )
 export const ICONS: Record<string, any> = {
+  activity: <ChecklistIcon size={18} />,
   me: svg(<><circle cx="12" cy="8" r="3.6" /><path d="M4.5 20a7.5 7.5 0 0 1 15 0" /></>),
   home: svg(<><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" /><path d="M10 21v-6h4v6" /></>),
   tools: svg(<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>),
@@ -26,7 +28,7 @@ export const ICONS: Record<string, any> = {
   // VS Code 侧栏「扩展」那个记号：三格 + 右上角一枚转 45° 探出去的方块（不是四格棋盘）。
   // 几何照 codicon 0xEAE6 的字形量出来再折算到 24 网格：框 2.3–21.7、十字线在 12、
   // 菱形心 (17.3, 6.7)。装插件的人第一眼就认得，也跟隔壁一列线性图标同一套笔画。
-  plugins: svg(<>
+  capabilities: svg(<>
     <path d="M12 2.3H3.8A1.5 1.5 0 0 0 2.3 3.8v16.4a1.5 1.5 0 0 0 1.5 1.5h16.4a1.5 1.5 0 0 0 1.5-1.5V12H12Z" />
     <path d="M2.3 12H12v9.7" />
     <path d="M17.3 1.4 22.6 6.7 17.3 12 12 6.7Z" />

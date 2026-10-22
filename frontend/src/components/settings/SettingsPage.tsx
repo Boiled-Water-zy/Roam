@@ -5,19 +5,19 @@
 // （registry 的 MAX_ROWS 在 dev 下会喊），收益是每一页都有地址：#/settings/node/browser
 // 可以直接发给别人，也可以被「去设置里打开它」的按钮直跳。
 //
-// 唯一允许滚的是搜索结果页：它天然跨类、条数不可控。
+// 页头固定，各页内容独立滚动。
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { App as AntApp, Button, Modal } from 'antd'
 import { AppLaunchIcon, CloseIcon, SearchIcon } from '../../icons'
 import { useI18n } from '../../i18n'
 import { useLayout } from '../../layout'
-import { usePreferences, saveWorkspace, getPreferences } from '../../preferences'
+import { usePreferences, saveWorkspace, getPreferences, usePreferenceSaveState, flushPreferences } from '../../preferences'
 import { useThemeMode } from '../../theme'
-import { api } from '../../api'
 import { useClusterNodes, useCurrentNodeId } from '../cluster/node-url'
 import MobileSubPage from '../MobileSubPage'
 import MobilePageSearch from '../mobile/MobilePageSearch'
 import { SettingRow } from './SettingRow'
+import { useEnvPush } from './env-vars'
 import { buildSettings, itemText, rowCount, type SettingsModel, type SettingsPageDef } from './registry'
 
 const DEFAULT_PAGE = 'common'
@@ -49,13 +49,14 @@ function PaneHead({ page, model, compact }: { page: SettingsPageDef; model: Sett
       : t('set.scopeMine')
   const act = page.action
   void model
+  if (compact && page.hideScope && !act && !page.note) return null
   return (
     <>
       {/* 手机上子页顶栏已经写了页名，这里不再写第二遍 */}
       {!compact && page.parent && <div className="crumb">{`${page.parent} · ${page.name}`}</div>}
       <div className="ptitle">
         {!compact && <h2>{page.name}</h2>}
-        <span className={`tt-set-badge${page.scope === 'node' ? ' node' : ''}`}>{where}</span>
+        {!page.hideScope && <span className={`tt-set-badge${page.scope === 'node' ? ' node' : ''}`}>{where}</span>}
         {act && (
           <>
             <span className="grow" />
@@ -84,6 +85,9 @@ export default function SettingsPage({ sub, onNav, onLogout, onInstall, fullscre
   const { message, modal } = AntApp.useApp()
   const { mode, setMode } = useThemeMode()
   const [prefs, setPrefs] = usePreferences()
+  const pushEnv = useEnvPush()
+  const saveState = usePreferenceSaveState()
+  const saveStatus = saveState === 'idle' ? null : <div role={saveState === 'failed' ? 'alert' : 'status'} className="tt-set-save-state">{t('settings.preference.' + saveState)}{saveState === 'failed' && <Button onClick={() => { void flushPreferences() }}>{t('agent.retry')}</Button>}</div>
   const { size } = useLayout()
   const compact = size === 'compact'
   const nodes = useClusterNodes()
@@ -104,16 +108,18 @@ export default function SettingsPage({ sub, onNav, onLogout, onInstall, fullscre
     return () => cancelAnimationFrame(frame)
   }, [compact, mobileSearchOpen, searchNonce])
 
+  const browserRestart = useRef<(() => Promise<void>) | null>(null)
+  const registerBrowserRestart = useRef((run: (() => Promise<void>) | null) => { browserRestart.current = run }).current
   const nodeLabel = nodes.find((n) => n.id === nodeId)?.name || ''
   const model = useMemo(() => buildSettings({
     t, theme: mode, setTheme: setMode, locale, setLocale, prefs, setPrefs,
     setWorkspace: saveWorkspace, nodeLabel, isHub: false, onLogout,
+    onBrowserReady: registerBrowserRestart,
     onBrowserRestart: async () => {
-      const r = await api('POST', '/browser/relaunch')
-      if (r?.data?.attached) message.warning(t('settings.browserAttached'))
-      else message.success(t('settings.browserRelaunched'))
+      if (!browserRestart.current) throw new Error(t('settings.readFailed'))
+      await browserRestart.current()
     },
-    onEnvPush: async () => { await api('POST', '/env/push'); message.success(t('env.pushed')) },
+    onEnvPush: pushEnv,
   }), [t, mode, locale, prefs, nodeLabel, onLogout])
 
   const routed = pageFromRoute(sub || '')
@@ -204,6 +210,7 @@ export default function SettingsPage({ sub, onNav, onLogout, onInstall, fullscre
     const openSub = sub ? model.pages[routed] : null
     return (
       <div className="tt-set">
+        {!openSub && saveStatus}
         {(mobileSearchOpen || q) && <div className="tt-set-mobile-head">
           <MobilePageSearch inputRef={searchRef} value={q} onChange={setQ}
             placeholder={t('set.searchPlaceholder')} resultCount={query ? t('set.hitCount', { n: totalHits }) : undefined}
@@ -239,6 +246,7 @@ export default function SettingsPage({ sub, onNav, onLogout, onInstall, fullscre
           <MobileSubPage title={openSub.name} onBack={() => (onNav ? onNav('settings') : (location.hash = '#/settings'))} manageHistory={false} keepBottomNav>
             <div className="tt-set-pane scroll">
               <PaneHead page={openSub} model={model} compact />
+              {saveStatus}
               <div className="rows">{openSub.items.map((it) => <SettingRow key={it.id} item={it} />)}</div>
             </div>
           </MobileSubPage>
@@ -250,6 +258,7 @@ export default function SettingsPage({ sub, onNav, onLogout, onInstall, fullscre
   const page = model.pages[current]
   return (
     <div className="tt-set">
+        {saveStatus}
       {head}
       <div className="tt-set-body">
         <div className="tt-set-tree">
@@ -293,10 +302,7 @@ export default function SettingsPage({ sub, onNav, onLogout, onInstall, fullscre
           })}
         </div>
         {query ? results : (
-          // 带自定义块的页（多机、手机、安全…）是表单不是设置行，长度不由我们决定——允许自己滚，
-          // 否则超出的部分会被 overflow:hidden 直接裁掉、够不着。
-          // 纯设置行拼出来的页仍然不滚：装不下就是这一类该拆（registry 的 MAX_ROWS 会喊）。
-          <div className={`tt-set-pane${page.items.some((it) => it.control.kind === 'custom') ? ' scroll' : ''}`}>
+          <div className="tt-set-pane scroll">
             <PaneHead page={page} model={model} />
             <div className="rows">{page.items.map((it) => <SettingRow key={it.id} item={it} />)}</div>
           </div>

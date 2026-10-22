@@ -85,11 +85,12 @@ function fence(lang: string, content: string): string {
   return '```' + lang + '\n' + content + '\n```'
 }
 
-// 统一：把文件绝对路径写进拖拽载荷（对话框识别 application/x-ttmux-path，其余认 text/plain）。
+// 文件夹只接收文件区专用载荷，避免把 Git 面板拖来的路径误当成移动操作。
 function startPathDrag(ev: React.DragEvent, full: string) {
   ev.dataTransfer.setData('application/x-ttmux-path', full)
+  ev.dataTransfer.setData('application/x-ttmux-file-move', full)
   ev.dataTransfer.setData('text/plain', full)
-  ev.dataTransfer.effectAllowed = 'copy'
+  ev.dataTransfer.effectAllowed = 'copyMove'
 }
 
 // 右键菜单的全部动作，收拢成一个对象在 FileBrowser → FileTree → FileContextMenu 间传递。
@@ -244,7 +245,7 @@ function FileRowBody({ full, name, isDir, size, accent, onInsertPath, onDownload
 // VSCode 风格可展开目录树：以 root 为根，子目录首次展开时懒加载（复用 GET /files?path=）。
 // 排序/隐藏文件过滤、点文件预览、拖入终端 @mention、右键删除都与平铺行一致。
 function FileTree({
-  root, rootEntries, accent, showHidden, sortKey, tick, selected, onOpenFile, actions,
+  root, rootEntries, accent, showHidden, sortKey, tick, selected, onOpenFile, actions, dropTarget, onFolderDragOver, onFolderDragLeave, onFolderDrop,
 }: {
   root: string
   rootEntries: Entry[]
@@ -255,6 +256,10 @@ function FileTree({
   selected: string | null
   onOpenFile: (full: string) => void
   actions: FileMenuActions
+  dropTarget: string | null
+  onFolderDragOver: (ev: React.DragEvent, path: string) => void
+  onFolderDragLeave: (ev: React.DragEvent, path: string) => void
+  onFolderDrop: (ev: React.DragEvent, path: string) => void
 }) {
   // 展开到哪几层记在本机（按根目录），刷新和换任务再回来都还在（tree-expansion-memory）
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(loadExpandedDirs(root)))
@@ -311,9 +316,12 @@ function FileTree({
       return (
         <Fragment key={full}>
           <FileContextMenu target={target} actions={actions}>
-            <div className="cc-filerow"
+            <div className={`cc-filerow${dropTarget === full ? ' tt-file-drop-target' : ''}`}
               draggable
               onDragStart={(ev) => startPathDrag(ev, full)}
+              onDragOver={e.dir ? (ev) => onFolderDragOver(ev, full) : undefined}
+              onDragLeave={e.dir ? (ev) => onFolderDragLeave(ev, full) : undefined}
+              onDrop={e.dir ? (ev) => onFolderDrop(ev, full) : undefined}
               onClick={(ev) => {
                 if ((ev.target as HTMLElement).closest('[data-file-action]')) return
                 e.dir ? toggleDir(full) : onOpenFile(full)
@@ -407,6 +415,8 @@ export default function FileBrowser({
   const [moveTarget, setMoveTarget] = useState<FileTarget | null>(null)
   const [moveDest, setMoveDest] = useState('')
   const [moveBusy, setMoveBusy] = useState(false)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const movingRef = useRef(false)
   const [copyTarget, setCopyTarget] = useState<FileTarget | null>(null)
   const [copyDest, setCopyDest] = useState('')
   const [copyBusy, setCopyBusy] = useState(false)
@@ -676,20 +686,45 @@ export default function FileBrowser({
   }
   const startMove = (target: FileTarget) => {
     setMoveTarget(target)
-    setMoveDest(joinPath(dirname(target.path), target.name))
+    setMoveDest('')
   }
-  const doMove = async () => {
-    const target = moveDest.trim()
-    if (!moveTarget || !target || moveBusy) return
+  const moveEntry = async (source: string, target: string) => {
+    if (movingRef.current) return
+    movingRef.current = true
     setMoveBusy(true)
     try {
-      const res = await api('POST', '/file/move', { path: moveTarget.path, target: resolveTypedPath(target) })
+      const res = await api('POST', '/file/move', { path: source, target })
       message.success(t('file.movedToPath'))
-      if (view === moveTarget.path) setView(res.data?.path || null)
+      if (view === source) setView(res.data?.path || null)
       setMoveTarget(null)
       refresh()
     } catch (e: any) { message.error(t('file.moveToFailed', { message: e.message })) }
-    finally { setMoveBusy(false) }
+    finally { movingRef.current = false; setMoveBusy(false) }
+  }
+  const doMove = () => {
+    const target = moveDest.trim()
+    if (moveTarget && target) void moveEntry(moveTarget.path, resolveTypedPath(target))
+  }
+  const onFolderDragOver = (ev: React.DragEvent, target: string) => {
+    if (!ev.dataTransfer.types.includes('application/x-ttmux-file-move')) return
+    ev.preventDefault()
+    ev.stopPropagation()
+    ev.dataTransfer.dropEffect = 'move'
+    setDropTarget((old) => old === target ? old : target)
+  }
+  const onFolderDragLeave = (ev: React.DragEvent, target: string) => {
+    if (!(ev.relatedTarget instanceof Node && ev.currentTarget.contains(ev.relatedTarget))) {
+      setDropTarget((old) => old === target ? null : old)
+    }
+  }
+  const onFolderDrop = (ev: React.DragEvent, target: string) => {
+    if (!ev.dataTransfer.types.includes('application/x-ttmux-file-move')) return
+    ev.preventDefault()
+    ev.stopPropagation()
+    setDropTarget(null)
+    const source = ev.dataTransfer.getData('application/x-ttmux-file-move')
+    if (!source || dirname(source) === target || target === source || target.startsWith(`${source}/`)) return
+    void moveEntry(source, target)
   }
   const mkdirInto = (target: FileTarget) => {
     setMkdirDir(target.path)
@@ -865,7 +900,7 @@ export default function FileBrowser({
   }, [cur, data?.entries, data?.parent, dir, pathDraft])
 
   const browserPane = (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', minHeight: 0, width: '100%', background: 'var(--bg-container)', borderLeft: '1px solid var(--border-subtle)', position: 'relative', overflow: 'hidden' }}>
+    <div onDragEnd={() => setDropTarget(null)} style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', minHeight: 0, width: '100%', background: 'var(--bg-base)', position: 'relative', overflow: 'hidden' }}>
       <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-subtle)' }}>
         {chrome !== 'tree' && (
           <div className="tt-filebrowser-title">
@@ -1036,15 +1071,18 @@ export default function FileBrowser({
           </div>
         )}
         {browseMode === 'tree' ? (
-          <FileTree root={cur} rootEntries={data?.entries || []} accent={accent} showHidden={showHidden} sortKey={sortKey} tick={tick} selected={sel} onOpenFile={openFile} actions={menuActions} />
+          <FileTree root={cur} rootEntries={data?.entries || []} accent={accent} showHidden={showHidden} sortKey={sortKey} tick={tick} selected={sel} onOpenFile={openFile} actions={menuActions} dropTarget={dropTarget} onFolderDragOver={onFolderDragOver} onFolderDragLeave={onFolderDragLeave} onFolderDrop={onFolderDrop} />
         ) : visibleEntries.map((e) => {
           const full = joinPath(cur, e.name)
           const target: FileTarget = { ...e, path: full }
           return (
             <FileContextMenu key={e.name} target={target} actions={menuActions}>
-              <div className="cc-filerow"
+              <div className={`cc-filerow${dropTarget === full ? ' tt-file-drop-target' : ''}`}
                 draggable
                 onDragStart={(ev) => startPathDrag(ev, full)}
+                onDragOver={e.dir ? (ev) => onFolderDragOver(ev, full) : undefined}
+                onDragLeave={e.dir ? (ev) => onFolderDragLeave(ev, full) : undefined}
+                onDrop={e.dir ? (ev) => onFolderDrop(ev, full) : undefined}
                 onClick={(ev) => {
                   if ((ev.target as HTMLElement).closest('[data-file-action]')) return
                   e.dir ? navigate(full) : openFile(full)

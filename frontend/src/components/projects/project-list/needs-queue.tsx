@@ -95,7 +95,7 @@ export function WorkbenchHead({ stats, lastAt, onNew, onSummaryClick, phone }: {
           <div className="prj-sum">
             {item(stats.running, '', t('overview.sumRunning'), 'running')}
             {item(stats.waiting, 'a', t('overview.sumWaiting'), 'needs')}
-            {item(stats.unfinished, 'a', t('overview.sumUnfinished'), 'needs')}
+            {item(stats.unfinished, 'info', t('overview.sumUnfinished'), 'needs')}
             {item(stats.swarms, 'p', t('overview.sumSwarms'), 'needs')}
           </div>
         )}
@@ -133,7 +133,7 @@ export function NeedsQueue({ cards, collapsed, onViewAll }: {
   if (collapsed && !open) {
     return (
       <button type="button" className="prj-needbar" onClick={() => setOpen(true)}>
-        <i className="prj-sd a" />
+        <i className={`prj-sd ${counts.waiting > 0 ? 'a' : 'info'}`} />
         <b>{t('overview.followUp')} {cards.length}</b>
         <span className="sub">{parts}</span>
         <span className="sp" />
@@ -159,7 +159,7 @@ export function NeedsQueue({ cards, collapsed, onViewAll }: {
       </div>
       <div className="prj-needs">
         {cards.slice(0, 3).map((c, i) => (
-          <article key={c.key} className={`prj-need prj-in${c.kind === 'swarm' ? ' p' : ''}`}
+          <article key={c.key} className={`prj-need prj-in${c.kind === 'swarm' ? ' p' : c.kind === 'unfinished' ? ' info' : ''}`}
             role="button" tabIndex={0} style={{ animationDelay: `${80 + i * 40}ms` }}
             onClick={c.go}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); c.go() } }}>
@@ -181,35 +181,34 @@ export function NeedsQueue({ cards, collapsed, onViewAll }: {
 export const NEEDS_CSS = `
 /* 页头：窄档 .acts 换行成整条横在标题下面，桌面（≥900）并回标题右端 */
 .prj-head .acts{width:100%;margin-left:0;justify-content:flex-start}
-.prj-new{flex:0 0 auto;display:inline-flex;align-items:center;gap:var(--sp-2);height:34px;padding:0 var(--sp-4);
+.prj-new{flex:0 0 auto;display:inline-flex;align-items:center;gap:var(--sp-2);height:var(--ctl-h);padding:0 var(--sp-4);
   border:0;border-radius:var(--r-sm);background:var(--accent-solid);color:#fff;
   font-size:var(--fs-sm);font-weight:600;cursor:pointer;transition:filter .15s}
 :where(html[data-pointer="fine"]) .prj-new:hover{filter:brightness(1.08)}
 .prj-sum{display:flex;align-items:center;gap:var(--sp-2) var(--sp-5);flex-wrap:wrap;
-  min-height:34px;font-size:var(--fs-meta)}
+  min-height:var(--ctl-h);font-size:var(--fs-meta)}
 .prj-sum button{display:inline-flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);
-  border:1px solid var(--border-subtle);border-radius:var(--r-pill);
-  background:var(--bg-container);color:var(--text-dim);font:inherit;cursor:pointer}
+  border:0;border-radius:var(--r-xs);
+  background:transparent;color:var(--text-dim);font:inherit;cursor:pointer}
 :where(html[data-pointer="fine"]) .prj-sum button:hover{color:var(--text-bright);background:var(--list-hover)}
 .prj-sum b{font-family:ui-monospace,monospace;font-weight:700;font-size:var(--fs-body);color:var(--text-bright)}
 /* 状态点：画出来的，不是打出来的（● 会跟着字体走） */
 .prj-sd{width:6px;height:6px;border-radius:50%;background:var(--ok);flex:0 0 auto;display:block}
 .prj-sd.a{background:var(--warn)}.prj-sd.p{background:var(--swarm)}
+.prj-sd.info{background:var(--accent)}
 
 /* 行动卡：一屏最多三张，不让黄框把项目卡挤到首屏以下 */
 .prj-needs{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--sp-3)}
 .prj-need{position:relative;min-width:0;min-height:118px;padding:12px 13px 34px;cursor:pointer;
-  border:1px solid var(--warn-border);border-radius:var(--r-card);
-  background:radial-gradient(circle at 100% 0,var(--warn-soft),transparent 38%),
-    linear-gradient(145deg,var(--warn-soft),transparent);
+  border:1px solid var(--border-subtle);border-radius:var(--r-card);background:var(--bg-container);
   transition:border-color .15s,transform .15s}
 :where(html[data-pointer="fine"]) .prj-need:hover{border-color:var(--warn);transform:translateY(-1px)}
 .prj-need:focus-visible{outline:1px solid var(--accent-border);outline-offset:2px}
-.prj-need.p{border-color:var(--swarm-border);
-  background:radial-gradient(circle at 100% 0,var(--swarm-soft),transparent 38%),var(--swarm-soft)}
 :where(html[data-pointer="fine"]) .prj-need.p:hover{border-color:var(--swarm)}
+:where(html[data-pointer="fine"]) .prj-need.info:hover{border-color:var(--accent)}
 .prj-need .ty{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-meta);font-weight:600;color:var(--warn)}
 .prj-need.p .ty{color:var(--swarm)}
+.prj-need.info .ty{color:var(--accent)}
 .prj-need .ty .pj{color:var(--text-dimmer);font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .prj-need h4{margin:var(--sp-2) 0 var(--sp-1);font-size:var(--fs-body);color:var(--text-bright);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -220,12 +219,12 @@ export const NEEDS_CSS = `
 /* 折叠态：搜索/筛选时行动队列收成一行，仍可点开 */
 .prj-needbar{display:flex;align-items:center;gap:var(--sp-2);width:100%;min-height:36px;
   padding:var(--sp-2) var(--sp-3);border-radius:var(--r-sm);cursor:pointer;text-align:left;
-  border:1px solid var(--warn-border);background:var(--warn-soft);color:var(--warn);font-size:var(--fs-meta)}
-:where(html[data-pointer="fine"]) .prj-needbar:hover{background:var(--warn-soft);border-color:var(--warn)}
+  border:1px solid var(--border-subtle);background:transparent;color:var(--text-bright);font-size:var(--fs-meta)}
+:where(html[data-pointer="fine"]) .prj-needbar:hover{background:var(--list-hover);border-color:var(--border)}
 .prj-needbar b{font-weight:600}
 .prj-needbar .sub{color:var(--text-dimmer)}
 .prj-needbar .sp{flex:1}
-.prj-needbar .ex{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto}
+.prj-needbar .ex{display:inline-flex;align-items:center;gap:var(--sp-1);flex:0 0 auto;color:var(--text-dim)}
 
 .prj-goi{display:inline-flex;vertical-align:-2px;margin-left:3px;opacity:.75}
 :where(html[data-pointer="fine"]) button:hover>.prj-goi,
