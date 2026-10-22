@@ -45,6 +45,7 @@ class EventService : Service() {
     private var unfinishedAt = 0L
     private val capsuleState = TaskCapsuleState()
     private var displayedCapsule: CapsuleTask? = null
+    private var foregroundNotificationId = NOTIF_LINK
     private var linkText = ""
     private val capsuleTimeout = Runnable { renderForeground() }
     private val recentlyCompleted = mutableMapOf<String, Long>()
@@ -110,7 +111,7 @@ class EventService : Service() {
             if (task != displayedCapsule) {
                 val n = TaskNotification.build(this, base, task.session, task.title, task.body,
                     task.state, task.actions, capsule = true)
-                foreground(n)
+                foreground(NOTIF_CAPSULE, n)
                 displayedCapsule = task
             }
             return
@@ -123,11 +124,13 @@ class EventService : Service() {
             .setSmallIcon(R.drawable.ic_stat).setContentTitle("Roami").setContentText(linkText)
             .setContentIntent(open).addAction(0, getString(R.string.link_stop), stop)
             .setOngoing(true).setPriority(NotificationCompat.PRIORITY_MIN).setSilent(true).build()
-        foreground(n)
+        foreground(NOTIF_LINK, n)
     }
 
-    private fun foreground(n: Notification) {
-        if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIF_LINK, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(NOTIF_LINK, n)
+    private fun foreground(id: Int, n: Notification) {
+        if (Build.VERSION.SDK_INT >= 29) startForeground(id, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(id, n)
+        if (foregroundNotificationId != id) getSystemService(NotificationManager::class.java).cancel(foregroundNotificationId)
+        foregroundNotificationId = id
     }
 
     private fun client(): OkHttpClient {
@@ -299,6 +302,7 @@ class EventService : Service() {
         const val CH_ATTENTION = "attention"
         const val NOTIF_LINK = 1
         const val NOTIF_ATTENTION = 2
+        const val NOTIF_CAPSULE = 4
         const val ACTION_STOP = "com.roami.app.STOP"
         const val ACTION_REFRESH = "com.roami.app.REFRESH"
         const val ACTION_RESOLVE = "com.roami.app.RESOLVE"
