@@ -1000,7 +1000,7 @@ html[data-pointer="coarse"] .mc { --ctl-h: 36px; }
 }
 .mc-tabs-strip { display: flex; align-items: flex-end; gap: 2px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .mc-tabs-strip::-webkit-scrollbar { display: none; }
-.mc-tabs-end { flex: 0 0 auto; padding-bottom: 3px; }
+.mc-tabs-end { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-1); align-self: stretch; }
 .mc-tab {
   display: flex; align-items: center; gap: 7px;
   flex: 0 1 190px; min-width: 110px; height: 32px; padding: 0 10px;
@@ -1031,19 +1031,18 @@ html[data-pointer="coarse"] .mc { --ctl-h: 36px; }
 /* 窄档标签抽屉里的卡片 */
 .mc-tabcard {
   display: flex; align-items: center; gap: var(--sp-2);
-  padding: 9px 10px; margin-bottom: 6px; min-height: 48px;
-  border-radius: var(--r-sm); background: var(--bg-base);
-  box-shadow: inset 0 0 0 1px var(--border-subtle); cursor: pointer;
+  padding: var(--sp-2) 0; min-height: var(--tap);
+  border-bottom: 1px solid var(--border-subtle); background: var(--bg-base);
 }
-.mc-tabcard.is-on { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent-border); }
+.mc-tabcard.is-on { background: var(--sel-bg); }
 .mc-tabcard-fav {
-  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+  flex: 0 0 auto; width: var(--sp-5); height: var(--sp-5); border-radius: var(--r-xs); display: grid; place-items: center;
   background: var(--bg-elevated); color: var(--text-dimmer); font-size: var(--fs-micro); font-weight: 700;
 }
 .mc-tabcard-meta { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .mc-tabcard-meta .t { font-size: var(--fs-sm); color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mc-tabcard-meta .u {
-  font-size: var(--fs-micro); color: var(--text-dimmer); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-meta); color: var(--text-dimmer); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .mc-newtab {
@@ -1914,6 +1913,7 @@ html[data-theme="light"] .tt-opencode-logo .light { display: block; }
 @media (pointer: coarse) { .cc-dl { opacity: .6; } }
 .cc-filerow { border-radius: 6px; margin: 1px 4px; }
 :where(html[data-pointer="fine"]) .cc-filerow:hover { background: rgba(88, 166, 255, .08); }
+.cc-filerow.tt-file-drop-target { background: var(--accent-soft) !important; outline: 1px solid var(--accent-border); }
 /* 右键菜单打开期间保持目标行高亮；状态留在菜单组件内，避免重渲染整棵文件列表。 */
 .tt-file-context-open > .cc-filerow { background: var(--sel-bg); }
 /* 手动控制的右键菜单不要被整行触发器拉伸到文件抽屉宽度。 */
@@ -3824,7 +3824,7 @@ html[data-pointer="coarse"] .tt-ka-rules .tt-act.xs { height: 30px; width: 34px;
   background: var(--bg-container); color: inherit; font: inherit; cursor: pointer; min-height: 44px;
 }
 :where(html[data-pointer="fine"]) .tt-inbox-row:hover { background: var(--list-hover); }
-.tt-inbox-row .ic { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font-size: var(--fs-meta); font-weight: 700; color: #fff; background: var(--text-dimmer); }
+.tt-inbox-row .ic { flex: 0 0 auto; width: var(--sp-5); height: var(--sp-5); border-radius: var(--r-xs); display: grid; place-items: center; font-size: var(--fs-meta); font-weight: 700; color: #fff; background: var(--text-dimmer); }
 .tt-inbox-row.waiting .ic { background: var(--warn); }
 .tt-inbox-row.done .ic { background: var(--ok-solid); }
 .tt-inbox-row.error .ic { background: var(--danger); }
@@ -4008,3 +4008,29 @@ html[data-size="compact"] .ant-modal { max-width: calc(100vw - 24px); margin-inl
 .tt-appupdate code { overflow-wrap: anywhere; font-size: var(--fs-meta); }
 button.tt-appupdate { width: 100%; text-align: left; font: inherit; cursor: pointer; }
 .tt-appupdate .action { color: var(--accent); }
+
+.mc-tab-groups { flex: 0 0 auto; padding: var(--sp-1); }
+.mc-tab-sleep { color: var(--text-dim); font-size: var(--fs-meta); margin-inline-start: var(--sp-2); }
+:where(html[data-pointer="coarse"]) .mc-tab-groups .ant-segmented-item-label { min-height: var(--tap); display: flex; align-items: center; }
+
+.mc-tab-list { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-3); }
+.mc-tab-select, .mc-tabcard-select { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.mc-tabcard-select { min-height: var(--tap); }
+button.mc-tab-x { padding: 0; border: 0; background: transparent; cursor: pointer; }
+
+.mc-tab.pinned .mc-tab-select { justify-content: center; }
+
+.mc-tab-directory-trigger { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--ctl-h); padding: 0 var(--sp-2); border: 1px solid var(--border-subtle); border-radius: var(--r-xs); background: transparent; color: var(--text-dim); font-size: var(--fs-meta); white-space: nowrap; cursor: pointer; }
+:where(html[data-pointer="fine"]) .mc-tab-directory-trigger:hover { color: var(--text-bright); background: var(--list-hover); }
+.mc-tab-directory { position: absolute; top: var(--topbar-h); right: 0; bottom: 0; width: min(100%, calc(var(--content-form) / 2)); display: flex; flex-direction: column; background: var(--bg-base); border-left: 1px solid var(--border-subtle); z-index: var(--z-panel); }
+.mc-tab-directory-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mc-tab-directory-head { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border-subtle); }
+.mc-tab-directory-head strong { font-size: var(--fs-body); }
+.mc-tab-directory-controls { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border-bottom: 1px solid var(--border-subtle); }
+.mc-tab-directory-controls .mc-tab-groups { padding: 0; }
+.mc-tab-group-title { margin: 0; padding: var(--sp-2) 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text-dim); }
+.mc-tab-empty, .mc-tab-empty-inline { padding: var(--sp-3); font-size: var(--fs-sm); color: var(--text-dim); }
+:where(html[data-pointer="coarse"]) .mc-tabs { height: max(var(--topbar-h), calc(var(--tap) + var(--sp-2))); }
+:where(html[data-pointer="coarse"]) .mc-tab-directory-trigger { min-height: var(--tap); }
+
+:where(html[data-pointer="coarse"]) .mc-tab-directory { top: max(var(--topbar-h), calc(var(--tap) + var(--sp-2))); }

@@ -115,7 +115,7 @@ class BrowserDriver:
         pending = await self.db.call(
             lambda db: rows(
                 db,
-                "SELECT a.*,r.owner_id,t.origin_conversation_id FROM resource_actions a "
+                "SELECT a.*,r.owner_id,r.resource_key,t.origin_conversation_id FROM resource_actions a "
                 "JOIN resources r ON r.id=a.resource_id JOIN tasks t ON t.id=a.task_id "
                 "WHERE r.kind='browser' AND a.state='unknown' "
                 "AND COALESCE(json_extract(a.result_json,'$.inputStopped'),0)!=1 "
@@ -129,6 +129,29 @@ class BrowserDriver:
                 receipt = self._receipt(await self.receipt_reader(action["id"]), action["id"])
                 if not receipt["inputStopped"]:
                     continue
+                if (
+                    receipt["state"] in {"succeeded", "failed", "cancelled"}
+                    and ":target:" in action["resource_key"]
+                ):
+                    browser, target = (
+                        action["resource_key"].removeprefix("browser:").split(":target:", 1)
+                    )
+                    try:
+                        await self._cli(
+                            "_tab-event",
+                            encoded(
+                                {
+                                    "action": "finish",
+                                    "browserId": browser,
+                                    "targetId": target,
+                                    "token": action["id"],
+                                    "known": True,
+                                }
+                            ),
+                            "--no-start",
+                        )
+                    except (DomainError, OSError, TimeoutError):
+                        continue
                 await self._complete({"owner": action["owner_id"]}, action, receipt)
 
                 def record(db, action=action, receipt=receipt):
@@ -530,11 +553,12 @@ class BrowserDriver:
         )
         raise DomainError("BROWSER_SOURCE_UNAVAILABLE", 409)
 
-    async def _tab_budget_exhausted(self, scope, binding, browser_id):
+    async def _tab_budget_exhausted(self, scope, binding, browser_id, capabilities):
+        limit = self.tabs.capacity(capabilities)
         tabs = await self.db.call(
             lambda db: rows(
                 db,
-                "SELECT resource_id FROM browser_tabs WHERE browser_id=? AND state!='closed' "
+                "SELECT resource_id FROM browser_tabs WHERE browser_id=? AND origin='agent' AND state!='closed' "
                 "ORDER BY resource_id",
                 (browser_id,),
             )
@@ -543,9 +567,7 @@ class BrowserDriver:
         key = (
             "browser-tab-budget:"
             + hashlib.sha256(
-                encoded(
-                    [scope["taskId"], scope["runId"], browser_id, self.config["max_tabs"], ids]
-                ).encode()
+                encoded([scope["taskId"], scope["runId"], browser_id, limit, ids]).encode()
             ).hexdigest()
         )
         if await self.db.call(
@@ -557,7 +579,7 @@ class BrowserDriver:
                 db,
                 binding["conversation"],
                 "resource.browser_budget_exhausted",
-                {"maxTabs": self.config["max_tabs"], "pooledResourceIds": ids},
+                {"maxTabs": limit, "pooledResourceIds": ids},
                 key=key,
                 task_id=scope["taskId"],
                 turn_id=binding.get("turnId"),
@@ -629,7 +651,7 @@ class BrowserDriver:
                     except DomainError as exc:
                         if exc.code != "BROWSER_TAB_BUDGET_EXCEEDED":
                             raise
-                        await self._tab_budget_exhausted(scope, binding, browser_id)
+                        await self._tab_budget_exhausted(scope, binding, browser_id, capabilities)
                     result = await self._perform(
                         scope,
                         lease,

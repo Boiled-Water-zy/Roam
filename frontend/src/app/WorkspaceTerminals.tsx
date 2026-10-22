@@ -35,7 +35,7 @@ export default function WorkspaceTerminals({ workspace, runtime, inspector, page
   const { t } = useI18n()
   const keys = useKeybindings()
   const { terms, active, taskView, space, activateSession, setOverlay, fileTabs, curFile, setActiveFile, closeFileTab, pinFileTab, setFileMode, reveal, openFileTab, reorderTerm } = workspace
-  const { fontSize, setFontSize, statusMap, setStatus, activityMap, termRefs, claudeMap, claudeView, setClaudeView, codexMap, codexView, setCodexView, setMobileWaiting } = runtime
+  const { fontSize, setFontSize, statusMap, setStatus, activityMap, termRefs, claudeMap, claudeView, setClaudeView, codexMap, codexView, setCodexView, openCodeMap, openCodeView, setOpenCodeView, setMobileWaiting } = runtime
   const { pageTabs, closePageTab, closePageTabs, tabBarHost } = pages
   const { openTerm, closeTerm, renameOpenTerm, newTerminalInTask } = actions
   const { toggleInspector, showInspector } = inspector
@@ -52,6 +52,7 @@ export default function WorkspaceTerminals({ workspace, runtime, inspector, page
       termRefs={termRefs} sendKey={sendKey}
       claudeMap={claudeMap} claudeView={claudeView} setClaudeView={setClaudeView}
       codexMap={codexMap} codexView={codexView} setCodexView={setCodexView}
+      openCodeMap={openCodeMap} openCodeView={openCodeView} setOpenCodeView={setOpenCodeView}
       agentKinds={agentKinds}
       onRename={renameOpenTerm}
       onCollapse={hasSider ? undefined : () => { setOverlay(false); space.setDockOpen(false) }}

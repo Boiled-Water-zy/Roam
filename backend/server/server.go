@@ -164,7 +164,8 @@ func New(cfg Config) *gin.Engine {
 		g.POST("/file/touch", h.FileTouch) // 文件侧栏：在指定目录新建空文件
 		g.POST("/upload", h.Upload)        // 上传文件到指定目录（拖拽到对话框 / 文件侧栏）
 
-		g.GET("/git/status", h.GitStatus)    // Git 面板：当前工作目录所属仓库状态
+		g.GET("/git/status", h.GitStatus) // Git 面板：当前工作目录所属仓库状态
+		g.POST("/git/initialize", h.GitInitialize)
 		g.GET("/git/diff", h.GitDiff)        // Git 面板：单文件差异
 		g.POST("/git/stage", h.GitStage)     // 暂存
 		g.POST("/git/unstage", h.GitUnstage) // 取消暂存
@@ -229,8 +230,10 @@ func New(cfg Config) *gin.Engine {
 		g.GET("/sessions/:name/transcript", h.ClaudeTranscript)      // 读 claude 对话记录
 		g.GET("/sessions/:name/codex", h.CodexStatus)                // 检测是否在跑 codex
 		g.GET("/sessions/:name/codex-transcript", h.CodexTranscript) // 读 codex 对话记录
-		g.GET("/sessions/:name/panes/active", h.ActivePane)          // 活动 pane 几何+cwd+前台进程（危险操作目标可视化）
-		g.POST("/sessions/:name/panes/:paneId/close", h.ClosePane)   // 结构化关闭 pane（不走 confirm-before 按键路径）
+		g.GET("/sessions/:name/opencode", h.OpenCodeStatus)
+		g.GET("/sessions/:name/opencode-transcript", h.OpenCodeTranscript)
+		g.GET("/sessions/:name/panes/active", h.ActivePane)        // 活动 pane 几何+cwd+前台进程（危险操作目标可视化）
+		g.POST("/sessions/:name/panes/:paneId/close", h.ClosePane) // 结构化关闭 pane（不走 confirm-before 按键路径）
 
 		g.GET("/tasks", h.Tasks)
 		g.POST("/tasks", h.Spawn)
@@ -335,6 +338,7 @@ func New(cfg Config) *gin.Engine {
 		g.GET("/browser/tabs", browser.Tabs)      // 标签页：列出
 		g.POST("/browser/tabs", browser.NewTab)   // 标签页：新建
 		g.DELETE("/browser/tabs/:id", browser.CloseTab)
+		g.PATCH("/browser/tabs/:id", browser.UpdateTab)
 		g.POST("/browser/tabs/:id/back", browser.TabBack)         // 后退
 		g.POST("/browser/tabs/:id/forward", browser.TabForward)   // 前进
 		g.POST("/browser/tabs/:id/reload", browser.TabReload)     // 刷新
