@@ -43,8 +43,10 @@ class EventService : Service() {
     @Volatile private var refreshing = false
     private var unfinished = 0
     private var unfinishedAt = 0L
-    private var progressSession: String? = null
-    private var progressLabel: String? = null
+    private val capsuleState = TaskCapsuleState()
+    private var displayedCapsule: CapsuleTask? = null
+    private var linkText = ""
+    private val capsuleTimeout = Runnable { renderForeground() }
     private val recentlyCompleted = mutableMapOf<String, Long>()
     private val statusLoop = object : Runnable {
         override fun run() { refreshStatus(); main.postDelayed(this, 15_000) }
@@ -53,19 +55,25 @@ class EventService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { stopped = true; ws?.close(1000, null); getSystemService(NotificationManager::class.java).cancel(NOTIF_ATTENTION); clearProgress(); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP) { stopped = true; ws?.close(1000, null); getSystemService(NotificationManager::class.java).cancel(NOTIF_ATTENTION); capsuleState.reset(); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_RESOLVE && ::base.isInitialized) {
+            intent.getStringExtra("session")?.let { capsuleState.resolve(it, SystemClock.elapsedRealtime()) }
+            renderForeground(); refreshStatus(); return START_STICKY
+        }
         if (intent?.action == ACTION_REFRESH && ::base.isInitialized) { refreshStatus(); return START_STICKY }
         val b = intent?.getStringExtra("base") ?: Prefs(this).current ?: run { stopSelf(); return START_NOT_STICKY }
         if (::base.isInitialized && base == b && ws != null) return START_STICKY
         base = b
-        clearProgress()
+        capsuleState.reset()
+        displayedCapsule = null
+        main.removeCallbacks(capsuleTimeout)
         recentlyCompleted.clear()
         unfinished = 0
         unfinishedAt = 0L
         host = runCatching { java.net.URI(base).host }.getOrNull() ?: base
         channels()
-        startFg(getString(R.string.link_connecting, host))
         stopped = false
+        startFg(getString(R.string.link_connecting, host))
         ws?.close(1000, null); ws = null
         connect()
         main.removeCallbacks(statusLoop)
@@ -75,21 +83,50 @@ class EventService : Service() {
 
     private fun channels() {
         val nm = getSystemService(NotificationManager::class.java)
+        nm.cancel("task-progress", 3)
         nm.createNotificationChannel(NotificationChannel(CH_LINK, getString(R.string.ch_link), NotificationManager.IMPORTANCE_MIN).apply { setShowBadge(false) })
         nm.createNotificationChannel(NotificationChannel(CH_EVENTS, getString(R.string.ch_events), NotificationManager.IMPORTANCE_HIGH).apply {
             description = getString(R.string.ch_events_desc)
+            setShowBadge(false)
+        })
+        nm.createNotificationChannel(NotificationChannel(CH_CAPSULE, getString(R.string.ch_capsule), NotificationManager.IMPORTANCE_DEFAULT).apply {
             setShowBadge(false)
         })
         nm.createNotificationChannel(NotificationChannel(CH_ATTENTION, getString(R.string.ch_attention), NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(true) })
     }
 
     private fun startFg(text: String) {
+        linkText = text
+        renderForeground()
+    }
+
+    private fun renderForeground() {
+        if (stopped || !::base.isInitialized) return
+        main.removeCallbacks(capsuleTimeout)
+        val now = SystemClock.elapsedRealtime()
+        val task = if (Build.VERSION.SDK_INT >= 36) capsuleState.current(now) else null
+        capsuleState.nextChangeDelay(now)?.let { main.postDelayed(capsuleTimeout, it) }
+        if (task != null) {
+            if (task != displayedCapsule) {
+                val n = TaskNotification.build(this, base, task.session, task.title, task.body,
+                    task.state, task.actions, capsule = true)
+                foreground(n)
+                displayedCapsule = task
+            }
+            return
+        }
+        if (displayedCapsule == null && linkText.isEmpty()) return
+        displayedCapsule = null
         val stop = PendingIntent.getService(this, 0, Intent(this, EventService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(this, 0, Intent(this, WebActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(this, CH_LINK)
-            .setSmallIcon(R.drawable.ic_stat).setContentTitle("Roami").setContentText(text)
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle("Roami").setContentText(linkText)
             .setContentIntent(open).addAction(0, getString(R.string.link_stop), stop)
             .setOngoing(true).setPriority(NotificationCompat.PRIORITY_MIN).setSilent(true).build()
+        foreground(n)
+    }
+
+    private fun foreground(n: Notification) {
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIF_LINK, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(NOTIF_LINK, n)
     }
 
@@ -133,8 +170,8 @@ class EventService : Service() {
 
     private fun onEvent(o: JSONObject) {
         val type = o.optString("type")
-        if (type == "session.waiting" || type == "session.done") refreshStatus()
-        if (!type.startsWith("session.") && type != "test" && type != "agent.message") return
+        if (type == "session.waiting" || type == "session.done" || type == "session.error") refreshStatus()
+        if (type !in setOf("session.waiting", "session.done", "session.error", "test", "agent.message")) return
         val agentMessage = type == "agent.message"
         val session = o.optString("session")
         val title = o.optString("title").ifBlank { o.optString("label") }
@@ -147,10 +184,16 @@ class EventService : Service() {
             val eventBase = base
             main.post {
                 if (stopped || base != eventBase) return@post
-                recentlyCompleted[session] = SystemClock.elapsedRealtime()
-                if (progressSession == session) clearProgress()
+                val now = SystemClock.elapsedRealtime()
+                if (type != "session.waiting") recentlyCompleted[session] = now
+                val state = when (type) {
+                    "session.waiting" -> TaskNoticeState.WAITING
+                    "session.error" -> TaskNoticeState.FAILED
+                    else -> TaskNoticeState.FINISHED
+                }
+                capsuleState.onEvent(CapsuleTask(session, title, body, state, actions), o.optLong("id"), now)
+                renderForeground()
                 if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return@post
-                val state = if (type == "session.waiting") TaskNoticeState.WAITING else TaskNoticeState.FINISHED
                 val notice = TaskNotification.build(localized, base, session, title, body, state, actions)
                 getSystemService(NotificationManager::class.java).notify(TaskNotification.id(session), notice)
             }
@@ -216,28 +259,20 @@ class EventService : Service() {
         unfinishedAt = 0L
         if (WidgetSnapshot.clear(this)) StatusWidget.update(this)
         updateAttention(0)
-        main.post { clearProgress() }
+        main.post { capsuleState.onSnapshot(emptyList(), emptyList(), SystemClock.elapsedRealtime()); renderForeground() }
     }
 
     private fun updateProgress(snapshot: WidgetSnapshot) {
         val now = SystemClock.elapsedRealtime()
         recentlyCompleted.entries.removeAll { now - it.value > 30_000 }
-        val task = snapshot.runningItems.firstOrNull { it.name !in recentlyCompleted }
-        if (task == null) { clearProgress(); return }
-        if (progressSession == task.name && progressLabel == task.label) return
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
-        val notice = TaskNotification.build(this, base, task.name, task.label,
-            getString(R.string.event_running_body), TaskNoticeState.RUNNING)
-        getSystemService(NotificationManager::class.java).notify(TAG_PROGRESS, NOTIF_PROGRESS, notice)
-        progressSession = task.name
-        progressLabel = task.label
-    }
-
-    private fun clearProgress() {
-        if (progressSession == null) return
-        getSystemService(NotificationManager::class.java).cancel(TAG_PROGRESS, NOTIF_PROGRESS)
-        progressSession = null
-        progressLabel = null
+        val running = snapshot.runningItems.filter { it.name !in recentlyCompleted }.map {
+            CapsuleTask(it.name, it.label, getString(R.string.event_running_body), TaskNoticeState.RUNNING)
+        }
+        val waiting = snapshot.waitingItems.filter { it.name !in recentlyCompleted }.map {
+            CapsuleTask(it.name, it.label, getString(R.string.event_waiting_body), TaskNoticeState.WAITING)
+        }
+        capsuleState.onSnapshot(running, waiting, now)
+        renderForeground()
     }
 
     private fun updateAttention(count: Int) {
@@ -255,17 +290,17 @@ class EventService : Service() {
         nm.notify(NOTIF_ATTENTION, notification)
     }
 
-    override fun onDestroy() { stopped = true; main.removeCallbacks(statusLoop); clearProgress(); ws?.close(1000, null); super.onDestroy() }
+    override fun onDestroy() { stopped = true; main.removeCallbacks(statusLoop); main.removeCallbacks(capsuleTimeout); ws?.close(1000, null); super.onDestroy() }
 
     companion object {
         const val CH_LINK = "link_v2"
         const val CH_EVENTS = "events_v2"
+        const val CH_CAPSULE = "capsule_v1"
         const val CH_ATTENTION = "attention"
         const val NOTIF_LINK = 1
         const val NOTIF_ATTENTION = 2
-        const val NOTIF_PROGRESS = 3
-        const val TAG_PROGRESS = "task-progress"
         const val ACTION_STOP = "com.roami.app.STOP"
         const val ACTION_REFRESH = "com.roami.app.REFRESH"
+        const val ACTION_RESOLVE = "com.roami.app.RESOLVE"
     }
 }

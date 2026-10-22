@@ -17,6 +17,7 @@
     <string name="ch_events">会话事件</string>
     <string name="ch_events_desc">会话在等你 / 做完 / 出错</string>
     <string name="ch_link">连接状态</string>
+    <string name="ch_capsule">任务状态胶囊</string>
     <string name="link_connected">已连接 %1$s</string>
     <string name="link_connecting">正在连接 %1$s</string>
     <string name="link_login">打开 Roami 登录后开始接收通知</string>
@@ -26,7 +27,10 @@
     <string name="event_waiting_title">%1$s · 待确认</string>
     <string name="event_waiting_chip">待确认</string>
     <string name="event_running_chip">进行中</string>
+    <string name="event_finished_chip">已完成</string>
+    <string name="event_failed_chip">出错了</string>
     <string name="event_running_body">任务正在进行。点按查看会话。</string>
+    <string name="event_waiting_body">任务需要你确认。点按查看会话。</string>
     <string name="event_action_failed">提交失败，请重试 · %1$s</string>
     <string name="update_downloading">正在下载更新包…</string>
     <string name="update_failed">更新包下载失败：%1$s</string>

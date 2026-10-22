@@ -38,7 +38,7 @@ data class WidgetSnapshot(val running: Int, val waiting: Int, val runningItems: 
             for (i in 0 until items.length()) {
                 val item = items.optJSONObject(i) ?: continue
                 val session = WidgetSession(item.optString("name"), item.optString("label"), item.optString("project"))
-                if (item.optBoolean("waiting")) { waiting++; if (waitingItems.isEmpty()) waitingItems += session }
+                if (item.optBoolean("waiting")) { waiting++; waitingItems += session }
                 if (item.optBoolean("running")) { running++; runningItems += session }
             }
             return WidgetSnapshot(running, waiting, runningItems, waitingItems, System.currentTimeMillis())

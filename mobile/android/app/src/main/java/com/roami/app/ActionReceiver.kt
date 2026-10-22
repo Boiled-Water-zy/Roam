@@ -42,11 +42,14 @@ class ActionReceiver : BroadcastReceiver() {
                 val accepted = client.newCall(req).execute().use { it.isSuccessful }
                 if (accepted) {
                     val notifications = ctx.getSystemService(NotificationManager::class.java)
-                    val current = notifications.activeNotifications.firstOrNull { it.id == TaskNotification.id(session) }
+                    val current = notifications.activeNotifications.firstOrNull {
+                        it.id == TaskNotification.id(session) && it.notification.channelId == EventService.CH_EVENTS
+                    }
                     if (current != null && current.notification.flags and Notification.FLAG_ONGOING_EVENT != 0) {
                         notifications.cancel(TaskNotification.id(session))
                     }
-                    runCatching { ctx.startService(Intent(ctx, EventService::class.java).setAction(EventService.ACTION_REFRESH)) }
+                    runCatching { ctx.startService(Intent(ctx, EventService::class.java)
+                        .setAction(EventService.ACTION_RESOLVE).putExtra("session", session)) }
                 } else showRetry(ctx, intent, base, session)
             } catch (_: Exception) {
                 showRetry(ctx, intent, base, session)
