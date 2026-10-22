@@ -3,8 +3,13 @@ import { api } from './api'
 export type RegisteredAgent = {
   kind: string
   installed: boolean
+  binary?: string
+  version?: string
+  versionState?: 'available' | 'unavailable'
+  authentication?: 'unknown' | 'required' | 'expired'
   quota: {
     state: 'available' | 'unknown'
+    reason?: 'provider_managed' | 'login_required' | 'login_expired' | 'no_snapshot' | 'request_failed' | 'rate_limited'
     remainingPercent?: number
     windowMinutes?: number
     resetsAt?: number
@@ -14,13 +19,16 @@ export type RegisteredAgent = {
   }
 }
 
-const pluginId = 'roam.agent-discovery'
-
-export async function discoverAgents(): Promise<RegisteredAgent[]> {
-  const result = await api('POST', `/plugins/${pluginId}/run`, { command: 'agent-discovery.scan', args: {} })
+export async function discoverAgents(signal?: AbortSignal): Promise<RegisteredAgent[]> {
+  const result = await api('GET', '/agent/professional', undefined, { signal })
   return result?.agents || []
 }
 
 export async function installAgent(kind: string): Promise<void> {
-  await api('POST', `/plugins/${pluginId}/run`, { command: 'agent-discovery.install', args: { kind } })
+  await api('POST', `/agent/professional/${encodeURIComponent(kind)}/install`)
+}
+
+export async function checkAgent(kind: string): Promise<RegisteredAgent> {
+  const result = await api('POST', `/agent/professional/${encodeURIComponent(kind)}/check`)
+  return result.agent
 }

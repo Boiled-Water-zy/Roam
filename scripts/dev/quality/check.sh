@@ -17,17 +17,22 @@ section() {
 
 changed_files() {
   if git rev-parse --verify HEAD >/dev/null 2>&1; then
-    git diff --name-only --cached --diff-filter=ACMR
+    git -c core.quotePath=false diff --name-only --cached --diff-filter=ACMR
   else
-    git diff --name-only --cached --diff-filter=ACMR
+    git -c core.quotePath=false diff --name-only --cached --diff-filter=ACMR
   fi
 }
 
 tracked_source_files() {
-  git ls-files \
-    '*.go' '*.sh' '*.bash' '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' \
+  git ls-files -z \
+    '*.go' '*.py' '*.sh' '*.bash' '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' \
     ':!:frontend/dist/*' ':!:frontend/node_modules/*'
 }
+
+section "CLI entry audit"
+node scripts/dev/quality/cli-entry-audit.mjs
+bash scripts/dev/selftest/install-storage-preflight.sh
+bash scripts/dev/selftest/retired-session-entries.sh
 
 section "Shell syntax"
 shell_files="$(git ls-files '*.sh' 'scripts/*.sh')"
@@ -41,7 +46,7 @@ fi
 section "Go formatting"
 go_files="$(git ls-files '*.go')"
 if [ -n "$go_files" ]; then
-  unformatted="$(gofmt -l $go_files)"
+  unformatted="$(gofmt -l $(printf '%s\n' "$go_files" | while IFS= read -r f; do [ ! -f "$f" ] || printf '%s\n' "$f"; done))"
   if [ -n "$unformatted" ]; then
     printf 'Go files need gofmt:\n%s\n' "$unformatted" >&2
     exit 1
@@ -49,11 +54,14 @@ if [ -n "$go_files" ]; then
 fi
 
 section "Go tests"
-(cd backend && go test ./...)
-(cd cli/ttmux-cli-go && go test ./...)
-for mod in plugins/*/go.mod; do
-  (cd "$(dirname "$mod")" && go test ./...)
-done
+go test ./...
+
+section "Python Agent runtime"
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv is missing. Install uv, then run: cd agent-runtime && uv sync --frozen" >&2
+  exit 1
+fi
+(cd agent-runtime && uv sync --frozen --quiet && uv run --frozen ruff check src tests && uv run --frozen ruff format --check src tests && uv run --frozen pytest -q)
 
 section "Frontend checks"
 if [ ! -d frontend/node_modules ]; then
@@ -70,11 +78,17 @@ if [ "$MODE" = "full" ]; then
 fi
 
 section "Secret scan"
-scan_files="$(tracked_source_files)"
-if [ -n "$scan_files" ]; then
-  if grep -nEI '(api[_-]?key|secret|token|password|passwd|private[_-]?key)[[:space:]]*[:=][[:space:]]*["'\''][^"'\'']{12,}' $scan_files; then
+mapfile -d '' -t scan_files < <(tracked_source_files)
+if [ "${#scan_files[@]}" -gt 0 ]; then
+  if grep -nEI '(api[_-]?key|secret|token|password|passwd|private[_-]?key)[[:space:]]*[:=][[:space:]]*["'\''][^"'\'']{12,}' "${scan_files[@]}"; then
     echo "Potential hard-coded secret found. Move secrets to .env or documented configuration." >&2
     exit 1
+  else
+    scan_status=$?
+    if [ "$scan_status" -ne 1 ]; then
+      echo "Secret scan failed to read source files." >&2
+      exit "$scan_status"
+    fi
   fi
 fi
 

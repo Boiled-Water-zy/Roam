@@ -143,7 +143,7 @@ Roami 的重点不是「多一个终端工具」，而是让开发机变成一�
 
 ## 安装与启动
 
-`roami` 是把前端与 `ttmux` CLI 内嵌在一起的单一自包含二进制，目标机无需 go/node/npm。
+`roami` 将前端与会话核心编入同一二进制；Web 控制台运行不需要 Go/Node/npm，浏览器自动化另需 Node 与 Chrome。
 配置与数据都在 `~/.roami/`（`config.yaml` 首次运行自动生成）。
 
 ### 方式 A — 装成常驻服务（推荐给 24 小时常驻运行的机器）
@@ -243,14 +243,15 @@ cluster:
 Roami 也提供命令行入口，方便脚本、自动化流程和 AI Agent 调用。这里不是普通用户的
 主入口；大多数时候你可以先从 Web 控制台开始。
 
-- `ttmux`：管理持久会话、后台任务、Agent worker、swarm 和机器可读状态。
-- `chrome`：驱动开发机上的 Chrome，用于 UI 调试、截图、表单操作和自动化验收。
+- `roami session`：管理持久会话、后台任务、Agent worker、swarm 和机器可读状态。
+- `roami chrome`：驱动开发机上的 Chrome，用于 UI 调试、截图、表单操作和自动化验收。
+- `roami adb`：转发系统 ADB，用于 Android 截图、触控、App 操作、文件传输和设备调试；需已安装 ADB。
 
 插件则扩展控制台本身——`roam.host-monitor` 提供资源监控面板，`roam.cron` 提供定时
 prompt 并自带配置面板。
 
 命令细节不放在首页展开，避免 README 变成工具手册。需要时请看
-**[docs/install/](docs/install/)**、`ttmux help` 和 `chrome help`。
+**[docs/install/](docs/install/)**、`roami session help`、`roami chrome help` 和 `roami adb help`。
 
 ## 开发与贡献
 
@@ -284,14 +285,13 @@ npm run dev
 只跑后端：
 
 ```bash
-cd backend
-TTMUX_BIN=../ttmux TTMUX_WEB_PASSWORD=dev go run ./cmd
+TTMUX_WEB_PASSWORD=dev go run ./cmd/roami server
 ```
 
 CLI smoke test：
 
 ```bash
-TTMUX=./ttmux bash tests/test_ttmux.sh
+ROAMI_BIN=/tmp/roami bash tests/test-session-cli.sh
 ```
 
 给 Agent 的仓库规则（设计系统、i18n、质量门禁）都在

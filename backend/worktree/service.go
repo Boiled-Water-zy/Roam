@@ -16,6 +16,8 @@ package worktree
 import (
 	"context"
 	"fmt"
+	"github.com/ybz21/Roami/internal/gitcontext"
+	"github.com/ybz21/Roami/internal/metadb"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,7 +28,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"ttmux-web/internal/metadb"
 )
 
 // ── 错误模型 ──────────────────────────────────────────────
@@ -76,24 +77,13 @@ const listCacheTTL = 3 * time.Second
 // scrubGitEnv 去掉环境里的 GIT_*（GIT_DIR/GIT_INDEX_FILE/GIT_WORK_TREE…）：
 // 进程若诞生于 git 钩子或被设置过这些变量，子进程 git 会被劫持到错误仓库。
 func scrubGitEnv() []string {
-	env := os.Environ()
-	out := env[:0]
-	for _, kv := range env {
-		k, _, _ := strings.Cut(kv, "=")
-		switch k {
-		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-			"GIT_COMMON_DIR", "GIT_PREFIX", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE":
-			continue
-		}
-		out = append(out, kv)
-	}
-	return out
+	return gitcontext.ForDirectory(os.Environ())
 }
 
 func git(ctx context.Context, dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir, "-c", "core.quotepath=false"}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Env = append(scrubGitEnv(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(scrubGitEnv(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
 	out, err := cmd.CombinedOutput()
 	return strings.TrimRight(string(out), "\n"), err
 }
@@ -104,7 +94,7 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 func gitID(ctx context.Context, dir string, args ...string) (string, error) {
 	full := append([]string{"-C", dir, "-c", "core.quotepath=false"}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
-	cmd.Env = append(scrubGitEnv(), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(scrubGitEnv(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
 	if _, err := git(ctx, dir, "var", "GIT_AUTHOR_IDENT"); err != nil {
 		cmd.Env = append(cmd.Env,
 			"GIT_AUTHOR_NAME=roam", "GIT_AUTHOR_EMAIL=roam@localhost",
@@ -158,6 +148,18 @@ func (s *Service) ResolveRepo(ctx context.Context, dir string) (Repo, error) {
 		return Repo{}, errf("NOT_GIT_REPO", "no worktree entries under %s", dir)
 	}
 	return Repo{CommonDir: common, Root: root}, nil
+}
+
+// WorktreeRoot resolves the current checkout, preserving independence between linked worktrees.
+func WorktreeRoot(ctx context.Context, directory string) (string, error) {
+	if !filepath.IsAbs(directory) {
+		return "", errf("BAD_PATH", "directory must be absolute")
+	}
+	root, err := git(ctx, directory, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", errf("NOT_GIT_REPO", "%s", root)
+	}
+	return canonical(root), nil
 }
 
 // lock 持仓库级 flock；返回解锁函数。
@@ -271,13 +273,15 @@ func (s *Service) defaultBase(ctx context.Context, repo Repo) string {
 			return name
 		}
 	}
-	if out, err := git(ctx, repo.Root, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && out != "HEAD" {
-		return strings.TrimSpace(out)
-	}
+
 	return ""
 }
 
 func (s *Service) Create(ctx context.Context, req CreateReq) (CreateResp, error) {
+	return s.create(ctx, req, nil)
+}
+
+func (s *Service) create(ctx context.Context, req CreateReq, prepared *PreparedBase) (CreateResp, error) {
 	repo, err := s.ResolveRepo(ctx, req.Dir)
 	if err != nil {
 		return CreateResp{}, err
@@ -287,53 +291,34 @@ func (s *Service) Create(ctx context.Context, req CreateReq) (CreateResp, error)
 	}
 
 	base := strings.TrimSpace(req.Base)
-	// 缺省基准（未显式指定 base/remote）：默认跟随远端主干最新处开分叉，
-	// 避免本地 base 落后于 origin 时新 worktree 从旧提交起步。
-	// 收养既有分支（req.Existing）不看这些：起点就是那条分支自己，base 只作比对目标。
-	autoBase := base == "" && req.Remote == "" && !req.Existing
 	if base == "" {
 		base = s.defaultBase(ctx, repo)
-		if base == "" {
-			return CreateResp{}, errf("BASE_UNRESOLVED", "cannot determine default base branch")
+		if base == "" && req.Existing {
+			return CreateResp{}, errf("BASE_UNRESOLVED", "cannot determine existing branch base")
 		}
 	}
-	// 远端 ref：显式 remote+ref，fetch 后锁定 OID（不做字符串猜测）
-	startRef := base
-	if req.Existing {
-		// 起点在锁内按分支算（见下），这里不解析 startRef
-	} else if req.Remote != "" {
-		if out, e := git(ctx, repo.Root, "fetch", "--", req.Remote, base); e != nil {
-			return CreateResp{}, errf("FETCH_FAILED", "%s", out)
-		}
-		startRef = req.Remote + "/" + base
-	} else if autoBase {
-		// 配了 origin 就尽力拉一把最新 origin/<base>（20s 上限，不阻断创建）；
-		// 无远端 / 离线 / fetch 失败一律静默回退本地 base。ahead/behind 与合入
-		// 判定本就优先比对 origin/<base>（见 List），故 baseref 仍记 base 名、口径一致。
-		if _, e := git(ctx, repo.Root, "config", "--get", "remote.origin.url"); e == nil {
-			fctx, fcancel := context.WithTimeout(ctx, 20*time.Second)
-			_, _ = git(fctx, repo.Root, "fetch", "--no-tags", "origin", "+refs/heads/"+base+":refs/remotes/origin/"+base)
-			fcancel()
-		}
-		if _, e := git(ctx, repo.Root, "rev-parse", "--verify", "-q", "refs/remotes/origin/"+base); e == nil {
-			startRef = "origin/" + base
-		}
-	}
-	var startOid string
-	if !req.Existing {
-		oid, e := git(ctx, repo.Root, "rev-parse", "--verify", "--end-of-options", startRef+"^{commit}")
-		if e != nil {
-			return CreateResp{}, errf("BAD_BASE", "cannot resolve %s: %s", startRef, oid)
-		}
-		startOid = oid
-	}
-
 	unlock, err := s.lock(repo)
 	if err != nil {
 		return CreateResp{}, err
 	}
 	defer unlock()
 	defer s.invalidate(repo)
+	var startOid string
+	var chosen PreparedBase
+	if !req.Existing {
+		if prepared != nil {
+			if prepared.repo != repo.Root || prepared.oid == "" {
+				return CreateResp{}, errf("BAD_BASE", "prepared base belongs to another repository")
+			}
+			chosen = *prepared
+		} else {
+			chosen, err = s.freshBase(ctx, repo, base, strings.TrimSpace(req.Remote))
+			if err != nil {
+				return CreateResp{}, err
+			}
+		}
+		startOid, base = chosen.oid, chosen.base
+	}
 
 	branch := strings.TrimSpace(req.Branch)
 	finalBranch := branch
@@ -409,6 +394,10 @@ func (s *Service) Create(ctx context.Context, req CreateReq) (CreateResp, error)
 		"roam.startoid":  startOid,
 		"roam.createdby": "roam",
 		"roam.createdat": time.Now().Format(time.RFC3339),
+	}
+	if !req.Existing {
+		ident["roam.baseremote"] = chosen.remote
+		ident["roam.remote-baseref"] = chosen.remoteBranch
 	}
 	if req.Existing {
 		ident["roam.adopted"] = "1" // 分支不是我们建的：收尾时别顺手删掉它
