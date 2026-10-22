@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Roami 胶囊测试</string>
+    <string name="instructions">启动两分钟测试任务，返回桌面，再点系统状态栏中的提示。此测试使用 Android 实时更新；是否显示为胶囊由系统决定。</string>
+    <string name="start">开始测试任务</string>
+    <string name="stop">结束测试任务</string>
+    <string name="promotion_settings">实时更新设置</string>
+    <string name="permission_missing">通知权限未开启。授权后再开始测试。</string>
+    <string name="diagnostics">Android API：%1$d\n设备：%2$s\n通知权限：%3$s\n系统允许提升通知：%4$s\n通知符合提升条件：%5$s</string>
+    <string name="yes">是</string>
+    <string name="no">否</string>
+    <string name="task_title">Roami 测试任务正在运行</string>
+    <string name="task_body">两分钟状态栏胶囊测试。点按可查看详情。</string>
+    <string name="chip_text">测试中</string>
+    <string name="channel_name">胶囊测试任务</string>
+</resources>
