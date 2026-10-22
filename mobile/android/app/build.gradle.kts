@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.roami.app"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.roami.app"
         minSdk = 26

@@ -43,6 +43,9 @@ class EventService : Service() {
     @Volatile private var refreshing = false
     private var unfinished = 0
     private var unfinishedAt = 0L
+    private var progressSession: String? = null
+    private var progressLabel: String? = null
+    private val recentlyCompleted = mutableMapOf<String, Long>()
     private val statusLoop = object : Runnable {
         override fun run() { refreshStatus(); main.postDelayed(this, 15_000) }
     }
@@ -50,11 +53,13 @@ class EventService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { stopped = true; ws?.close(1000, null); getSystemService(NotificationManager::class.java).cancel(NOTIF_ATTENTION); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP) { stopped = true; ws?.close(1000, null); getSystemService(NotificationManager::class.java).cancel(NOTIF_ATTENTION); clearProgress(); stopSelf(); return START_NOT_STICKY }
         if (intent?.action == ACTION_REFRESH && ::base.isInitialized) { refreshStatus(); return START_STICKY }
         val b = intent?.getStringExtra("base") ?: Prefs(this).current ?: run { stopSelf(); return START_NOT_STICKY }
         if (::base.isInitialized && base == b && ws != null) return START_STICKY
         base = b
+        clearProgress()
+        recentlyCompleted.clear()
         unfinished = 0
         unfinishedAt = 0L
         host = runCatching { java.net.URI(base).host }.getOrNull() ?: base
@@ -132,12 +137,27 @@ class EventService : Service() {
         if (!type.startsWith("session.") && type != "test" && type != "agent.message") return
         val agentMessage = type == "agent.message"
         val session = o.optString("session")
-        val notificationKey = if (agentMessage) AgentNotification.key(o) else session
-        val path = if (agentMessage) AgentNotification.path(o) else "/#/inbox/" + java.net.URLEncoder.encode(session, "UTF-8")
         val title = o.optString("title").ifBlank { o.optString("label") }
         val notificationLocale = o.optString("locale").takeIf { it == "zh-CN" || it == "en-US" }
         val localized = if (notificationLocale != null) createConfigurationContext(Configuration(resources.configuration).apply { setLocale(Locale.forLanguageTag(notificationLocale)) }) else this
         val body = if (agentMessage && o.optBoolean("hidePreview")) localized.getString(R.string.agent_new_message) else o.optString("body")
+        if (!agentMessage && type != "test") {
+            if (session.isBlank()) return
+            val actions = o.optJSONArray("actions")?.let { list -> (0 until list.length()).map { list.optString(it) } } ?: emptyList()
+            val eventBase = base
+            main.post {
+                if (stopped || base != eventBase) return@post
+                recentlyCompleted[session] = SystemClock.elapsedRealtime()
+                if (progressSession == session) clearProgress()
+                if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return@post
+                val state = if (type == "session.waiting") TaskNoticeState.WAITING else TaskNoticeState.FINISHED
+                val notice = TaskNotification.build(localized, base, session, title, body, state, actions)
+                getSystemService(NotificationManager::class.java).notify(TaskNotification.id(session), notice)
+            }
+            return
+        }
+        val notificationKey = if (agentMessage) AgentNotification.key(o) else "test"
+        val path = if (agentMessage) AgentNotification.path(o) else "/#/projects"
         val open = PendingIntent.getActivity(this, notificationKey.hashCode(),
             Intent(this, WebActivity::class.java).putExtra("path", path).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -145,16 +165,6 @@ class EventService : Service() {
             .setSmallIcon(R.drawable.ic_stat).setContentTitle(title).setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(open).setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_HIGH)
-        val actions = o.optJSONArray("actions")
-        if (!agentMessage && actions != null) for (i in 0 until actions.length()) {
-            val a = actions.getString(i)
-            val key = when (a) { "allow" -> "Enter"; "deny" -> "Escape"; else -> continue }
-            val pi = PendingIntent.getBroadcast(this, (session + a).hashCode(),
-                Intent(this, ActionReceiver::class.java).putExtra("base", base).putExtra("session", session).putExtra("key", key).putExtra("nid", session.hashCode()),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            b.addAction(0, getString(if (a == "allow") R.string.act_allow else R.string.act_deny), pi)
-        }
-        // 同一会话复用一条：等你 → 做完 只更新，不叠一摞
         if (agentMessage) b.setNumber(o.optInt("badge", 0).coerceAtLeast(0))
         getSystemService(NotificationManager::class.java).notify(notificationKey.hashCode(), b.build())
     }
@@ -164,6 +174,7 @@ class EventService : Service() {
         val cookie = CookieManager.getInstance().getCookie(base)
         if (cookie.isNullOrBlank()) { invalidateStatus(); return }
         refreshing = true
+        val statusBase = base
         thread {
             try {
                 val http = client()
@@ -175,6 +186,7 @@ class EventService : Service() {
                     snapshot.save(this, base)
                     StatusWidget.update(this)
                     updateAttention(snapshot.attentionCount)
+                    main.post { if (!stopped && base == statusBase) updateProgress(snapshot) }
                 }
             } catch (_: Exception) {
                 invalidateStatus()
@@ -204,6 +216,28 @@ class EventService : Service() {
         unfinishedAt = 0L
         if (WidgetSnapshot.clear(this)) StatusWidget.update(this)
         updateAttention(0)
+        main.post { clearProgress() }
+    }
+
+    private fun updateProgress(snapshot: WidgetSnapshot) {
+        val now = SystemClock.elapsedRealtime()
+        recentlyCompleted.entries.removeAll { now - it.value > 30_000 }
+        val task = snapshot.runningItems.firstOrNull { it.name !in recentlyCompleted }
+        if (task == null) { clearProgress(); return }
+        if (progressSession == task.name && progressLabel == task.label) return
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val notice = TaskNotification.build(this, base, task.name, task.label,
+            getString(R.string.event_running_body), TaskNoticeState.RUNNING)
+        getSystemService(NotificationManager::class.java).notify(TAG_PROGRESS, NOTIF_PROGRESS, notice)
+        progressSession = task.name
+        progressLabel = task.label
+    }
+
+    private fun clearProgress() {
+        if (progressSession == null) return
+        getSystemService(NotificationManager::class.java).cancel(TAG_PROGRESS, NOTIF_PROGRESS)
+        progressSession = null
+        progressLabel = null
     }
 
     private fun updateAttention(count: Int) {
@@ -221,7 +255,7 @@ class EventService : Service() {
         nm.notify(NOTIF_ATTENTION, notification)
     }
 
-    override fun onDestroy() { stopped = true; main.removeCallbacks(statusLoop); ws?.close(1000, null); super.onDestroy() }
+    override fun onDestroy() { stopped = true; main.removeCallbacks(statusLoop); clearProgress(); ws?.close(1000, null); super.onDestroy() }
 
     companion object {
         const val CH_LINK = "link_v2"
@@ -229,6 +263,8 @@ class EventService : Service() {
         const val CH_ATTENTION = "attention"
         const val NOTIF_LINK = 1
         const val NOTIF_ATTENTION = 2
+        const val NOTIF_PROGRESS = 3
+        const val TAG_PROGRESS = "task-progress"
         const val ACTION_STOP = "com.roami.app.STOP"
         const val ACTION_REFRESH = "com.roami.app.REFRESH"
     }

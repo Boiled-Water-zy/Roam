@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="agent_new_message">New message from your agent</string>
+    <string name="event_waiting_title">%1$s · needs approval</string>
+    <string name="event_waiting_chip">Review</string>
+    <string name="event_running_chip">Working</string>
+    <string name="event_running_body">Task in progress. Tap to open the session.</string>
+    <string name="event_action_failed">Could not submit. Try again · %1$s</string>
 </resources>
