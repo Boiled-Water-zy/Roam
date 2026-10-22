@@ -23,6 +23,8 @@ export function useTerminalRuntime(terms: string[], isMobile: boolean) {
   const [claudeView, setClaudeView] = useState<Record<string, boolean>>({})
   const [codexMap, setCodexMap] = useState<Record<string, ClaudeInfo>>({})
   const [codexView, setCodexView] = useState<Record<string, boolean>>({})
+  const [openCodeMap, setOpenCodeMap] = useState<Record<string, ClaudeInfo>>({})
+  const [openCodeView, setOpenCodeView] = useState<Record<string, boolean>>({})
 
   const [mobileWaiting, setMobileWaiting] = useState<Record<string, boolean>>({})
   useEffect(() => {
@@ -42,6 +44,12 @@ export function useTerminalRuntime(terms: string[], isMobile: boolean) {
           if (stop) return
           setCodexMap((m) => (sameProbe(m[n], r.data) ? m : { ...m, [n]: r.data }))
           if (isMobile && r.data?.running) setCodexView((v) => (n in v ? v : { ...v, [n]: true }))
+        } catch { }
+        try {
+          const r = await api('GET', `/sessions/${encodeURIComponent(n)}/opencode`)
+          if (stop) return
+          setOpenCodeMap((m) => (sameProbe(m[n], r.data) ? m : { ...m, [n]: r.data }))
+          if (isMobile && r.data?.running) setOpenCodeView((v) => (n in v ? v : { ...v, [n]: true }))
         } catch { }
       })
     }
@@ -76,11 +84,21 @@ export function useTerminalRuntime(terms: string[], isMobile: boolean) {
       const { [oldName]: oldValue, ...rest } = m
       return { ...rest, [newName]: oldValue }
     })
+    setOpenCodeMap((m) => {
+      if (!(oldName in m)) return m
+      const { [oldName]: oldValue, ...rest } = m
+      return { ...rest, [newName]: oldValue }
+    })
+    setOpenCodeView((m) => {
+      if (!(oldName in m)) return m
+      const { [oldName]: oldValue, ...rest } = m
+      return { ...rest, [newName]: oldValue }
+    })
     if (termRefs.current[oldName]) {
       termRefs.current[newName] = termRefs.current[oldName]
       delete termRefs.current[oldName]
     }
   }
   const setStatus = (name: string, status: TermStatus) => setStatusMap((m) => ({ ...m, [name]: status }))
-  return { fontSize, setFontSize, statusMap, setStatus, activityMap, termRefs, claudeMap, claudeView, setClaudeView, codexMap, codexView, setCodexView, mobileWaiting, setMobileWaiting, rename }
+  return { fontSize, setFontSize, statusMap, setStatus, activityMap, termRefs, claudeMap, claudeView, setClaudeView, codexMap, codexView, setCodexView, openCodeMap, openCodeView, setOpenCodeView, mobileWaiting, setMobileWaiting, rename }
 }
