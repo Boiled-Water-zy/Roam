@@ -315,6 +315,7 @@ html[data-pointer="coarse"] .tt-rail-btn::after {
    容器留白在 .tt-nav 上，这里用负 margin 把分割线还原成整栏宽。 */
 .tt-nav-brand {
   display: flex; align-items: center; gap: var(--sp-2);
+  box-sizing: border-box;
   height: var(--topbar-h); flex: 0 0 var(--topbar-h);
   margin: 0 -8px var(--sp-2); padding: 0 var(--sp-3);
   border-bottom: 1px solid var(--border-subtle);
@@ -322,6 +323,20 @@ html[data-pointer="coarse"] .tt-rail-btn::after {
 .tt-nav.rail .tt-nav-brand { justify-content: center; margin: 0 0 var(--sp-2); padding: 0; }
 /* 标是透明底的，别再给它圆角和投影——那是当年方形底板留下的两笔 */
 .tt-nav-brand img { flex: 0 0 auto; }
+.tt-nav-brand-actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+.tt-nav-icon {
+  position: relative; flex: 0 0 auto;
+  display: grid; place-items: center; width: var(--ctl-h); height: var(--ctl-h); padding: 0;
+  border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-dim); cursor: pointer;
+}
+:where(html[data-pointer="fine"]) .tt-nav-icon:hover { background: var(--list-hover); color: var(--text-bright); }
+.tt-nav-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tt-nav.rail .tt-nav-brand img { display: none; }
+.tt-nav.rail .tt-nav-brand-actions { margin: 0; }
+html[data-pointer="coarse"] .tt-nav-icon::after {
+  content: ""; position: absolute; width: max(var(--tap), calc(100% + var(--sp-2))); height: var(--tap);
+  left: 50%; top: 50%; transform: translate(-50%, -50%);
+}
 /* 只有标 + 名，没有标语。
    标语（ANYWHERE · ANYTIME）是 10px——比 --fs-micro 还小一档，掉在字号阶梯外面；
    它也不承载信息：这一栏是导航，用户已经在应用里了，不需要再被介绍一遍产品。
@@ -345,7 +360,7 @@ html[data-pointer="coarse"] .tt-rail-btn::after {
   color: var(--text-dimmer); font-size: var(--fs-micro); font-weight: 700; letter-spacing: .1em;
 }
 
-.tt-nav-item, .tt-nav-collapse {
+.tt-nav-item {
   position: relative; display: flex; align-items: center; gap: 11px; width: 100%;
   min-height: 38px; padding: 0 10px; border: 0; border-radius: var(--r-sm);
   background: none; color: var(--text-dim); font-size: var(--fs-body); text-align: left;
@@ -353,17 +368,16 @@ html[data-pointer="coarse"] .tt-rail-btn::after {
 }
 /* 轨态每项 36 高、铺满整轨、不带圆角：一条 48 宽的轨里再切圆角，悬停块两边各剩 6px
    黑边，读起来像一排小卡片而不是一列导航 */
-.tt-nav.rail .tt-nav-item,
-.tt-nav.rail .tt-nav-collapse {
+.tt-nav.rail .tt-nav-item {
   justify-content: center; min-height: 36px; padding: 0; border-radius: 0;
 }
-:where(html[data-pointer="fine"]) .tt-nav-item:hover, :where(html[data-pointer="fine"]) .tt-nav-collapse:hover { background: var(--list-hover); color: var(--text-bright); }
+:where(html[data-pointer="fine"]) .tt-nav-item:hover { background: var(--list-hover); color: var(--text-bright); }
 /* 图标槽：导航项 / 终端开关 / 账户 / 收起 用同一个 20px 方槽，图标才在一条竖线上。
    账户那枚以前是「蓝底圆角块」，在一列裸图标里自成一格——同一列里不要两种图标语言。 */
-.tt-nav-item .ic, .tt-nav-collapse .ic {
+.tt-nav-item .ic {
   flex: 0 0 auto; width: 20px; height: 20px; display: grid; place-items: center;
 }
-.tt-nav-item .nm, .tt-nav-collapse .nm {
+.tt-nav-item .nm {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* ── 设置 › 多机：模式二选一 + 接入状态 + 两条入口 ───────────────── */
@@ -491,12 +505,11 @@ html[data-pointer="coarse"] .tt-devrow.acts > .tt-mode { padding-bottom: 58px; }
    选中于是只剩两件事——图标点亮成 accent、栏最左边一条 accent 线。 */
 .tt-nav.rail .tt-nav-item.on { background: none; color: var(--accent); }
 .tt-nav.rail .tt-nav-item.on::before { height: 18px; }
-/* 角标只有一种形状与分量（淡底 + 同色字），颜色只用来分语义：
-   琥珀＝需要你处理，蓝＝计数。一个实心蓝圆点混在一列淡底胶囊里会读成「更重要」 */
+/* 普通计数用蓝色，避免待收尾数量被读成警告。 */
 .tt-nav-item .bd {
   margin-left: auto; flex: 0 0 auto; min-width: 20px; height: 20px; padding: 0 6px;
   display: grid; place-items: center; border-radius: var(--r-pill);
-  background: rgba(210, 153, 34, .18); color: #e3b341;
+  background: var(--accent-soft); color: var(--accent);
   font: 600 var(--fs-micro)/1 ui-monospace, monospace;
 }
 .tt-nav-item .bd.blue { background: var(--accent-soft); color: var(--accent); }
@@ -507,8 +520,7 @@ html[data-pointer="coarse"] .tt-devrow.acts > .tt-mode { padding-bottom: 58px; }
 }
 
 /* 粗指针：视觉仍是 36 高，命中区用伪元素补到 44——直接把行画高会把这一列拉长一截 */
-html[data-pointer="coarse"] .tt-nav-item::after,
-html[data-pointer="coarse"] .tt-nav-collapse::after {
+html[data-pointer="coarse"] .tt-nav-item::after {
   content: ""; position: absolute; left: 0; right: 0; top: 50%;
   transform: translateY(-50%); height: 44px;
 }
@@ -535,21 +547,7 @@ html[data-pointer="coarse"] .tt-nav-collapse::after {
 }
 .tt-nav.rail .tt-nav-search { justify-content: center; width: 36px; margin: 0 auto var(--sp-2); padding: 0; border-radius: var(--r-xs); }
 
-/* ── 插件页：一整块，不是两张卡片（跟会话工作区/镜像页同一套语言）──
-   原来是两张 antd Card：圆角、投影、比页面亮一档的底，中间 16px 缝。五个页面里只有这一页
-   长这样。这里把卡片外观收平——直角、无边框、无投影、底色跟页面一致，两栏之间只留 1px 线。 */
-.tt-plugins { gap: 0; }
-.tt-plugins .ant-card {
-  border: 0; border-radius: 0; background: transparent; box-shadow: none;
-}
-.tt-plugins .ant-card-head {
-  border-radius: 0; background: transparent;
-  border-bottom: 1px solid var(--border-subtle);
-}
-/* 左栏靠一条竖线跟右栏断句；两栏同底，不再一亮一暗 */
-.tt-plugins > .tt-plugins-list { border-right: 1px solid var(--border-subtle); }
 .tt-filebrowser-title { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
-.tt-plugins-detail > .ant-card > .ant-card-body { padding-inline: var(--sp-4); }
 
 /* ── 右栏三面板（22 设计 §3.4）：活动条 + 作用域头 + 文件 / Git / Worktree ── */
 .tt-ins { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
@@ -602,8 +600,8 @@ html[data-pointer="coarse"] .tt-csearch-line, html[data-pointer="coarse"] .tt-cs
 /* 搜索：实底 + 32 高的假输入框，点了开 ⌘K 面板。与底同色只描一圈边的话没人看得出这里能搜 */
 .tt-tree-head .gl { flex: 1; padding-left: 10px; color: var(--text-dimmer); font-size: var(--fs-micro); font-weight: 700; letter-spacing: .1em; }
 .tt-tree-head .tt-act { color: var(--text-dimmer); }
-/* 项目行的首字母圆标：项目卡那枚（icoOf 取色）缩到 20，住在图标槽里 */
-.tt-tree-row .av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 700 11px/1 var(--mono); }
+/* 项目标保持中性，让颜色只承担状态含义。 */
+.tt-tree-row .av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 700 var(--fs-micro)/1 var(--mono); color: var(--text-dim); background: var(--sel-bg); }
 .tt-tree-proj + .tt-tree-proj { margin-top: 4px; }
 .tt-tree-proj.loose { margin-top: 10px; }
 .tt-tree-proj .gl { padding: 0 10px; margin-bottom: var(--sp-1); color: var(--text-dimmer); font-size: var(--fs-micro); font-weight: 700; letter-spacing: .1em; }
@@ -619,10 +617,10 @@ html[data-pointer="coarse"] .tt-csearch-line, html[data-pointer="coarse"] .tt-cs
 .tt-tree .dot.run { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .tt-tree .dot.wait { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
 .tt-tree .dot.fin { background: var(--swarm); }
-/* 任务卡（参照 Orca 侧栏）：一张卡 = 名字 / 分支 / 「N 个会话」头 / 会话行；卡之间留 4px，当前任务的卡描一圈 */
-.tt-tree-task { margin: 3px 6px 3px 12px; padding: 3px 0 4px; border-radius: var(--r-sm); background: var(--bg-container); border: 1px solid var(--border-subtle); }
-.tt-tree-task.on { border-color: var(--accent-border); }
-.tt-tree-task.idle { opacity: .72; border-style: dashed; }
+/* 会话沿用侧栏底色，避免每个任务再套一张卡片。 */
+.tt-tree-task { margin: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3); padding: 0; border: 0; border-radius: 0; background: transparent; }
+.tt-tree-task.idle { opacity: .72; }
+.tt-tree .tt-tree-row.on { background: transparent; color: var(--text-bright); }
 /* 项目行右端的 […] [+]：一直看得见（淡），悬停亮 */
 .tt-tree-row.proj .act { flex: 0 0 auto; width: 20px; height: 20px; display: grid; place-items: center; border-radius: var(--r-xs); color: var(--text-dimmer); }
 .tt-tree-row.proj .nm + .act, .tt-tree-row.proj .bd + .act { margin-left: auto; }
@@ -840,7 +838,7 @@ html[data-size="compact"] .tt-pagehead { gap: var(--sp-2); }
 .tt-git-root {
   position: relative; display: flex; flex-direction: column;
   flex: 1; height: 100%; min-height: 0; width: 100%; overflow: hidden;
-  background: var(--bg-container);
+  background: var(--bg-base);
 }
 .tt-git-main { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .tt-git-detail {
@@ -1002,7 +1000,7 @@ html[data-pointer="coarse"] .mc { --ctl-h: 36px; }
 }
 .mc-tabs-strip { display: flex; align-items: flex-end; gap: 2px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .mc-tabs-strip::-webkit-scrollbar { display: none; }
-.mc-tabs-end { flex: 0 0 auto; padding-bottom: 3px; }
+.mc-tabs-end { flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-1); align-self: stretch; }
 .mc-tab {
   display: flex; align-items: center; gap: 7px;
   flex: 0 1 190px; min-width: 110px; height: 32px; padding: 0 10px;
@@ -1033,19 +1031,18 @@ html[data-pointer="coarse"] .mc { --ctl-h: 36px; }
 /* 窄档标签抽屉里的卡片 */
 .mc-tabcard {
   display: flex; align-items: center; gap: var(--sp-2);
-  padding: 9px 10px; margin-bottom: 6px; min-height: 48px;
-  border-radius: var(--r-sm); background: var(--bg-base);
-  box-shadow: inset 0 0 0 1px var(--border-subtle); cursor: pointer;
+  padding: var(--sp-2) 0; min-height: var(--tap);
+  border-bottom: 1px solid var(--border-subtle); background: var(--bg-base);
 }
-.mc-tabcard.is-on { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent-border); }
+.mc-tabcard.is-on { background: var(--sel-bg); }
 .mc-tabcard-fav {
-  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+  flex: 0 0 auto; width: var(--sp-5); height: var(--sp-5); border-radius: var(--r-xs); display: grid; place-items: center;
   background: var(--bg-elevated); color: var(--text-dimmer); font-size: var(--fs-micro); font-weight: 700;
 }
 .mc-tabcard-meta { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .mc-tabcard-meta .t { font-size: var(--fs-sm); color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mc-tabcard-meta .u {
-  font-size: var(--fs-micro); color: var(--text-dimmer); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-meta); color: var(--text-dimmer); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .mc-newtab {
@@ -1090,12 +1087,16 @@ html[data-pointer="coarse"] .mc { --ctl-h: 36px; }
 }
 .mc-keys.is-float .mc-ib { border-radius: var(--r-pill); }
 
-/* ── 页面骨架：所有一级页面从同一个左上角起笔，卡片和工具区间距一致 ── */
+/* 页面是平面工作区；圆角与容器色只属于独立内容卡和控件。 */
 .tt-page {
   min-height: 100%;
-  /* 吃密度令牌而不是写死 16：compact 档收到 12，392 的屏上多出 8px 内容宽（13 §3.3）。
-     此前令牌定义了却没人消费，手机上还是 16。 */
+  width: 100%;
+  margin: 0;
   padding: var(--pad-page);
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-base);
+  box-shadow: none;
   box-sizing: border-box;
   display: flex;
   align-items: flex-start;
@@ -1105,16 +1106,6 @@ html[data-pointer="coarse"] .mc { --ctl-h: 36px; }
   padding-bottom: calc(76px + env(safe-area-inset-bottom));
 }
 .tt-global-tabs { flex: 0 0 auto; min-width: 0; }
-.tt-page-card {
-  margin: var(--sp-2);
-  min-height: calc(100% - 2 * var(--sp-2));
-  height: calc(100% - 2 * var(--sp-2));
-  width: calc(100% - 2 * var(--sp-2));
-  overflow: auto;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-card);
-  background: var(--bg-container);
-}
 /* 有会话坞时底部再让出 50——否则页面最后一行永远压在坞底下 */
 .tt-page-mobile.has-dock {
   padding-bottom: calc(126px + env(safe-area-inset-bottom));
@@ -1349,10 +1340,8 @@ html[data-pointer="coarse"] .tt-srow .acts { opacity: 1; }
 .tt-page-files,
 .tt-page-phone,
 .tt-page-browser,
-/* 插件页也满高：不给的话它只有 min-height，里面那块 height:100% 落到 auto 上，
-   于是左右两栏的高度由内容决定——列表下面一空，中间那条竖线就断在半路（截图里它到
-   最后一个插件就没了）。线要到底，列就得先到底。 */
-.tt-page-plugins,
+/* 能力页和设置页各自管理内部滚动。 */
+.tt-page-capabilities,
 /* 设置页自己管滚动：搜索框与分类树必须钉住，只有内容区可以动 */
 .tt-page-settings {
   height: 100%;
@@ -1366,7 +1355,7 @@ html[data-pointer="coarse"] .tt-srow .acts { opacity: 1; }
 .tt-page-phone,
 .tt-page-browser,
 .tt-page-files,
-.tt-page-plugins,
+.tt-page-capabilities,
 /* 项目页与设置页同样满幅：五页外框这才真的是一套。留白不再由页面容器给，
    而是各自的内容段自己带（.prj-head/.prj-tabs/.prj-layout、.tt-set-head/.tt-set-pane）——
    这样 sticky 头和分割线能一路铺到边，跟文件/插件页的那条竖线是同一种做法。 */
@@ -1374,31 +1363,17 @@ html[data-pointer="coarse"] .tt-srow .acts { opacity: 1; }
 .tt-page-settings { padding: 0; }
 .tt-page-phone.tt-page-mobile,
 .tt-page-browser.tt-page-mobile,
-.tt-page-files.tt-page-mobile,
-.tt-page-plugins.tt-page-mobile { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+.tt-page-files.tt-page-mobile { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
 .tt-page-phone.tt-page-mobile.has-dock,
 .tt-page-browser.tt-page-mobile.has-dock,
-.tt-page-files.tt-page-mobile.has-dock,
-.tt-page-plugins.tt-page-mobile.has-dock { padding-bottom: calc(126px + env(safe-area-inset-bottom)); }
+.tt-page-files.tt-page-mobile.has-dock { padding-bottom: calc(126px + env(safe-area-inset-bottom)); }
 .tt-page-files > *,
 .tt-page-phone > *,
 .tt-page-browser > *,
-.tt-page-plugins > *,
+.tt-page-capabilities > *,
 .tt-page-settings > * {
   height: 100%;
   min-height: 0;
-}
-.tt-page.tt-page-card {
-  height: calc(100% - 2 * var(--sp-2));
-  min-height: calc(100% - 2 * var(--sp-2));
-}
-.tt-page-browser.tt-page-card {
-  margin: 0;
-  width: 100%;
-  height: 100%;
-  min-height: 100%;
-  border: 0;
-  border-radius: 0;
 }
 .tt-page .ant-space-vertical {
   align-items: stretch;
@@ -1551,9 +1526,10 @@ html[data-size="compact"] .ant-form-item-control-input-content > .ant-picker { w
 /* 标签条外壳：左侧「收起」固定，标签区独立横滚，两侧溢出给渐隐（14 §7.1） */
 .tt-tabs-wrap {
   position: relative; display: flex; align-items: center; min-width: 0;
+  box-sizing: border-box; height: var(--topbar-h); flex: 0 0 var(--topbar-h);
   background: var(--bg-base); border-bottom: 1px solid var(--border-subtle);
 }
-.tt-tabs-wrap > .tt-tabs { flex: 1 1 auto; min-width: 0; border-bottom: 0; }
+.tt-tabs-wrap > .tt-tabs { flex: 1 1 auto; min-width: 0; height: 100%; border-bottom: 0; }
 .tt-tabs-lead { flex: 0 0 auto; display: flex; align-items: center; padding: 0 0 0 8px; }
 /* 两端的翻页钮 + 右端的「全部标签」清单：只在溢出时出现（fadeL/fadeR 决定挂不挂）。
    渐隐只是暗示「这边还有」，没有横向滚轮的鼠标照样够不着——这几枚是能点的那一版。
@@ -1584,7 +1560,7 @@ html[data-pointer="coarse"] .tt-tabs-nav::after { content: ''; position: absolut
 .tt-tab {
   position: relative;
   display: inline-flex; align-items: center; gap: 7px; min-width: 132px; max-width: 220px;
-  height: 34px; padding: 0 6px 0 10px;
+  height: 100%; padding: 0 6px 0 10px;
   border: 0; border-right: 1px solid var(--border-subtle); border-radius: 0; background: transparent;
   color: var(--text-dim); font-size: var(--fs-meta); line-height: 1; white-space: nowrap; cursor: pointer;
   transition: background .12s, color .12s;
@@ -1908,10 +1884,6 @@ html[data-pointer="coarse"] .tt-send::after { content: ''; position: absolute; l
 .tt-opencode-logo .light { display: none; }
 html[data-theme="light"] .tt-opencode-logo .dark { display: none; }
 html[data-theme="light"] .tt-opencode-logo .light { display: block; }
-:where(html[data-pointer="coarse"]) .tt-agent-discovery-action { position: relative; }
-:where(html[data-pointer="coarse"]) .tt-agent-discovery-action::after {
-  content: ''; position: absolute; inset: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-1));
-}
 
 /* ── 链接：默认偏中性，hover 才上主色 ── */
 .ant-typography a, a.ant-typography { color: var(--accent); }
@@ -1941,6 +1913,7 @@ html[data-theme="light"] .tt-opencode-logo .light { display: block; }
 @media (pointer: coarse) { .cc-dl { opacity: .6; } }
 .cc-filerow { border-radius: 6px; margin: 1px 4px; }
 :where(html[data-pointer="fine"]) .cc-filerow:hover { background: rgba(88, 166, 255, .08); }
+.cc-filerow.tt-file-drop-target { background: var(--accent-soft) !important; outline: 1px solid var(--accent-border); }
 /* 右键菜单打开期间保持目标行高亮；状态留在菜单组件内，避免重渲染整棵文件列表。 */
 .tt-file-context-open > .cc-filerow { background: var(--sel-bg); }
 /* 手动控制的右键菜单不要被整行触发器拉伸到文件抽屉宽度。 */
@@ -3302,6 +3275,8 @@ html[data-size="compact"] .cc-st-jump::after { content: ''; position: absolute; 
    右边只画选中的那一类，页内不滚——一页装不下就是这一类该拆（registry 的 MAX_ROWS
    在 dev 下会喊）。唯一允许滚的是搜索结果页 .tt-set-pane.scroll，它跨类、条数不可控。 */
 .tt-set { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.tt-set-save-state { flex: 0 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--pad-page); font-size: var(--fs-meta); color: var(--text-dim); }
+.tt-set-save-state[role="alert"] { color: var(--danger); background: var(--danger-soft); }
 .tt-set-head { flex: 0 0 auto; padding: var(--sp-3) var(--pad-page); border-bottom: 1px solid var(--border-subtle); }
 /* 页名 + 搜索 + JSON 一行（与会话页同一套：.tt-pagename 在手机档自动隐藏） */
 .tt-set-headrow { display: flex; align-items: center; gap: var(--sp-2); }
@@ -3367,7 +3342,7 @@ html[data-size="compact"] .cc-st-jump::after { content: ''; position: absolute; 
 .tt-set-pane .ptitle .grow { flex: 1; }
 .tt-set-pane .ptitle h2 { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
 .tt-set-pane .pnote { margin: 0 0 var(--sp-2); font-size: var(--fs-meta); color: var(--text-dim); max-width: 74ch; }
-.tt-set-pane .rows { flex: 1; min-height: 0; overflow: hidden; padding-right: var(--sp-4); }
+.tt-set-pane .rows { flex: 1; min-height: 0; overflow: auto; padding-right: var(--sp-4); }
 .tt-set-pane.scroll .rows { overflow: auto; }
 .tt-set-empty { padding: 48px 10px; color: var(--text-dimmer); font-size: var(--fs-sm); }
 .tt-set-resulthead { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-3) 0 2px; }
@@ -3849,7 +3824,7 @@ html[data-pointer="coarse"] .tt-ka-rules .tt-act.xs { height: 30px; width: 34px;
   background: var(--bg-container); color: inherit; font: inherit; cursor: pointer; min-height: 44px;
 }
 :where(html[data-pointer="fine"]) .tt-inbox-row:hover { background: var(--list-hover); }
-.tt-inbox-row .ic { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font-size: var(--fs-meta); font-weight: 700; color: #fff; background: var(--text-dimmer); }
+.tt-inbox-row .ic { flex: 0 0 auto; width: var(--sp-5); height: var(--sp-5); border-radius: var(--r-xs); display: grid; place-items: center; font-size: var(--fs-meta); font-weight: 700; color: #fff; background: var(--text-dimmer); }
 .tt-inbox-row.waiting .ic { background: var(--warn); }
 .tt-inbox-row.done .ic { background: var(--ok-solid); }
 .tt-inbox-row.error .ic { background: var(--danger); }
@@ -4033,3 +4008,29 @@ html[data-size="compact"] .ant-modal { max-width: calc(100vw - 24px); margin-inl
 .tt-appupdate code { overflow-wrap: anywhere; font-size: var(--fs-meta); }
 button.tt-appupdate { width: 100%; text-align: left; font: inherit; cursor: pointer; }
 .tt-appupdate .action { color: var(--accent); }
+
+.mc-tab-groups { flex: 0 0 auto; padding: var(--sp-1); }
+.mc-tab-sleep { color: var(--text-dim); font-size: var(--fs-meta); margin-inline-start: var(--sp-2); }
+:where(html[data-pointer="coarse"]) .mc-tab-groups .ant-segmented-item-label { min-height: var(--tap); display: flex; align-items: center; }
+
+.mc-tab-list { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-3); }
+.mc-tab-select, .mc-tabcard-select { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.mc-tabcard-select { min-height: var(--tap); }
+button.mc-tab-x { padding: 0; border: 0; background: transparent; cursor: pointer; }
+
+.mc-tab.pinned .mc-tab-select { justify-content: center; }
+
+.mc-tab-directory-trigger { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--ctl-h); padding: 0 var(--sp-2); border: 1px solid var(--border-subtle); border-radius: var(--r-xs); background: transparent; color: var(--text-dim); font-size: var(--fs-meta); white-space: nowrap; cursor: pointer; }
+:where(html[data-pointer="fine"]) .mc-tab-directory-trigger:hover { color: var(--text-bright); background: var(--list-hover); }
+.mc-tab-directory { position: absolute; top: var(--topbar-h); right: 0; bottom: 0; width: min(100%, calc(var(--content-form) / 2)); display: flex; flex-direction: column; background: var(--bg-base); border-left: 1px solid var(--border-subtle); z-index: var(--z-panel); }
+.mc-tab-directory-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mc-tab-directory-head { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border-subtle); }
+.mc-tab-directory-head strong { font-size: var(--fs-body); }
+.mc-tab-directory-controls { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border-bottom: 1px solid var(--border-subtle); }
+.mc-tab-directory-controls .mc-tab-groups { padding: 0; }
+.mc-tab-group-title { margin: 0; padding: var(--sp-2) 0; font-size: var(--fs-sm); font-weight: 600; color: var(--text-dim); }
+.mc-tab-empty, .mc-tab-empty-inline { padding: var(--sp-3); font-size: var(--fs-sm); color: var(--text-dim); }
+:where(html[data-pointer="coarse"]) .mc-tabs { height: max(var(--topbar-h), calc(var(--tap) + var(--sp-2))); }
+:where(html[data-pointer="coarse"]) .mc-tab-directory-trigger { min-height: var(--tap); }
+
+:where(html[data-pointer="coarse"]) .mc-tab-directory { top: max(var(--topbar-h), calc(var(--tap) + var(--sp-2))); }
