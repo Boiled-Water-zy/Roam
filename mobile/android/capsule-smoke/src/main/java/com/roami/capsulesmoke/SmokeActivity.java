@@ -10,6 +10,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.service.notification.StatusBarNotification;
 import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -84,11 +85,19 @@ public final class SmokeActivity extends Activity {
         CapsuleService.ensureChannel(this);
         NotificationManager manager = getSystemService(NotificationManager.class);
         Notification candidate = CapsuleService.makeNotification(this);
+        String promotion = getString(R.string.not_started);
+        for (StatusBarNotification posted : manager.getActiveNotifications()) {
+            if (posted.getId() == CapsuleService.NOTIFICATION_ID) {
+                promotion = getString((posted.getNotification().flags & Notification.FLAG_PROMOTED_ONGOING) != 0
+                        ? R.string.yes : R.string.no);
+                break;
+            }
+        }
         diagnostics.setText(getString(R.string.diagnostics, Build.VERSION.SDK_INT,
                 Build.MANUFACTURER + " " + Build.MODEL,
                 getString(checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED ? R.string.yes : R.string.no),
                 getString(manager.canPostPromotedNotifications() ? R.string.yes : R.string.no),
-                getString(candidate.hasPromotableCharacteristics() ? R.string.yes : R.string.no)));
+                getString(candidate.hasPromotableCharacteristics() ? R.string.yes : R.string.no), promotion));
     }
 
     private void openPromotionSettings() {
