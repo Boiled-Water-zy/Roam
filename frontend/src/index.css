@@ -1913,6 +1913,7 @@ html[data-theme="light"] .tt-opencode-logo .light { display: block; }
 @media (pointer: coarse) { .cc-dl { opacity: .6; } }
 .cc-filerow { border-radius: 6px; margin: 1px 4px; }
 :where(html[data-pointer="fine"]) .cc-filerow:hover { background: rgba(88, 166, 255, .08); }
+.cc-filerow.tt-file-drop-target { background: var(--accent-soft) !important; outline: 1px solid var(--accent-border); }
 /* 右键菜单打开期间保持目标行高亮；状态留在菜单组件内，避免重渲染整棵文件列表。 */
 .tt-file-context-open > .cc-filerow { background: var(--sel-bg); }
 /* 手动控制的右键菜单不要被整行触发器拉伸到文件抽屉宽度。 */
