@@ -81,6 +81,8 @@ class BrowserFixture:
                     "expected_scene",
                 ],
             }
+        elif verb == "_tab-event":
+            output = {"entries": {}}
         elif verb == "tabs":
             output = [{"targetId": "target-fixture"}] if "new" in self.writes else []
         elif verb in {"operation-cancel", "operation-status"}:
@@ -604,8 +606,8 @@ def test_malformed_driver_acknowledgements_cannot_prove_inputs_stopped(state, st
         {"enabled": "yes"},
         {"max_tabs": True},
         {"max_tabs": -1},
-        {"max_tabs": 0},
-        {"max_tabs": 21},
+        {"max_tabs": 1001},
+        {"max_tabs": 1000000},
         {"max_tabs": 1.5},
         {"existing_tabs": 1},
         {"unknown": True},
@@ -617,7 +619,7 @@ def test_browser_configuration_rejects_invalid_values(config):
 
 
 @pytest.mark.parametrize("budget", [1, 7, 20])
-def test_browser_budget_has_a_shared_twenty_tab_ceiling(budget):
+def test_browser_budget_preserves_explicit_values_and_defaults_to_twenty(budget):
     assert browser_config({"max_tabs": budget})["max_tabs"] == budget
     assert browser_config({"enabled": True})["max_tabs"] == 20
 
