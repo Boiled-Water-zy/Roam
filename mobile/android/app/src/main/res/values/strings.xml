@@ -54,4 +54,9 @@
     <string name="attention_title">%1$d 项需要处理</string>
     <string name="attention_body">待确认会话和待收尾任务</string>
     <string name="agent_new_message">大总管有新消息</string>
+    <string name="event_finished_title">%1$s · 已完成</string>
+    <string name="event_failed_title">%1$s · 执行失败</string>
+    <string name="event_acknowledge">已知晓</string>
+    <string name="event_prompt_changed">问题已变化，请打开会话查看当前选项。</string>
+    <string name="event_all_choices">查看全部选项</string>
 </resources>

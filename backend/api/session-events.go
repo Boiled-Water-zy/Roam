@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -20,6 +21,7 @@ import (
 type sessionEventState struct {
 	streak   int
 	notified bool
+	prompt   string
 	lastTurn string // 已经通知过的那条 end_turn 的 uuid
 	hadAgent bool
 }
@@ -61,7 +63,11 @@ func (e *sessionEvents) observe(in observeInput) []PushPayload {
 	for name, label := range in.sessions {
 		cap := in.capture(name)
 		st := e.state[name]
-		waiting := sessionWaiting(cap)
+		prompt, waiting := notificationPromptFromScreen(cap)
+		if waiting && st.prompt != prompt.token() {
+			st.streak, st.notified = 0, false
+			st.prompt = prompt.token()
+		}
 
 		// ── 等你 ──
 		if !waiting {
@@ -73,7 +79,7 @@ func (e *sessionEvents) observe(in observeInput) []PushPayload {
 			}
 			if st.streak >= 2 && !st.notified {
 				st.notified = true
-				p := PushPayload{Type: "session.waiting", Session: name, Label: label, Title: label, Body: waitingSummary(cap, 140)}
+				p := PushPayload{Type: "session.waiting", Session: name, Label: label, Title: label, Body: prompt.body(), Prompt: prompt.token(), Choices: prompt.Choices}
 				if _, opts, ok := waitingPrompt(cap); (ok && len(opts) > 0 && yesFirst.MatchString(opts[0])) || yesNoPat.MatchString(waitStripCtl(cap)) {
 					p.Actions = []string{"allow", "deny"}
 				}
@@ -86,7 +92,7 @@ func (e *sessionEvents) observe(in observeInput) []PushPayload {
 			lt := in.lastTurn(name)
 			if lt.key != "" && lt.key != st.lastTurn {
 				if lt.stop == "end_turn" && !waiting && e.seeded && time.Since(lt.at) < 10*time.Minute {
-					out = append(out, PushPayload{Type: "session.done", Session: name, Label: label, Title: label, Body: oneLine(lt.text, 140)})
+					out = append(out, PushPayload{Type: "session.done", Session: name, Label: label, Title: label, Body: oneLine(lt.text, 1200)})
 				}
 				st.lastTurn = lt.key
 			}
@@ -186,7 +192,7 @@ func codexLastTurn(file string) lastTurnInfo {
 	if err != nil {
 		return lastTurnInfo{}
 	}
-	const tailBytes = 64 << 10
+	const tailBytes = 1 << 20
 	off := st.Size() - tailBytes
 	if off < 0 {
 		off = 0
@@ -347,12 +353,17 @@ func (a *API) SessionEventLoop() {
 			p.ID = a.Inbox.Publish(p.Type, p.Session, p.Label, p.Body)
 			p.Badge = a.Inbox.Unread()
 			a.Push.Broadcast(p)
-			a.Events.Broadcast(p)
+			accepted, dropped := a.Events.enqueue(p)
+			log.Printf("session event: type=%s session=%s event=%d websocket=%d dropped=%d", p.Type, p.Session, p.ID, accepted, dropped)
 		}
 		now := time.Now()
 		for name := range sessions {
 			cap := capture(name)
-			snap := liveSnap{Waiting: sessionWaiting(cap), At: now}
+			prompt, waiting := notificationPromptFromScreen(cap)
+			snap := liveSnap{Waiting: waiting, At: now}
+			if waiting {
+				snap.Prompt = &prompt
+			}
 			if p, ok := procs[name]; ok && p.Kind != "" {
 				snap.Agent = p.Kind
 				snap.Busy = screenBusy(cap) || (p.Kind == "opencode" && openCodeActive[name])

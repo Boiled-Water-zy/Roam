@@ -22,6 +22,19 @@ func TestCodexCompletionEvent(t *testing.T) {
 	}
 }
 
+func TestCodexCompletionSurvivesLargeFollowingToolOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	completed := `{"timestamp":"2026-10-22T07:00:00Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","last_agent_message":"已修复上传失败，并通过构建验证。"}}`
+	following := `{"type":"response_item","payload":{"type":"function_call_output","output":"` + strings.Repeat("x", 128<<10) + `"}}`
+	if err := os.WriteFile(path, []byte(completed+"\n"+following+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := codexLastTurn(path)
+	if got.key != "turn-1" || !strings.Contains(got.text, "上传失败") {
+		t.Fatalf("lost completion after tool output: %+v", got)
+	}
+}
+
 func TestOpenCodeCompletionEvent(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -73,7 +86,7 @@ func TestSessionEventsDebounceAndReset(t *testing.T) {
 	if len(got[0].Actions) != 2 {
 		t.Fatalf("1. Yes 这种该带 允许/拒绝: %+v", got[0])
 	}
-	if got[0].Body != "Do you want to proceed? · 1. Yes / 2. No" {
+	if got[0].Body != "Do you want to proceed?\n1. Yes\n2. No" {
 		t.Fatalf("正文该是问题加选项: %q", got[0].Body)
 	}
 	if got := ev.observe(inputOf(sess, waitScreen)); len(got) != 0 {

@@ -188,6 +188,11 @@ class WebActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getStringExtra("url")?.let { it != base } == true) {
+            recreate()
+            return
+        }
         // 点通知进来：直接跳到那个会话
         intent.getStringExtra("path")?.let { web.loadUrl(base + it) }
     }

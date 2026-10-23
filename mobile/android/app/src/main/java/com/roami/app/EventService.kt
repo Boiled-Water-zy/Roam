@@ -58,8 +58,12 @@ class EventService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopped = true; ws?.close(1000, null); getSystemService(NotificationManager::class.java).cancel(NOTIF_ATTENTION); capsuleState.reset(); stopSelf(); return START_NOT_STICKY }
         if (intent?.action == ACTION_RESOLVE && ::base.isInitialized) {
-            intent.getStringExtra("session")?.let { capsuleState.resolve(it, SystemClock.elapsedRealtime()) }
+            intent.getStringExtra("session")?.let { capsuleState.resolve(it, SystemClock.elapsedRealtime(), intent.getStringExtra("prompt")) }
             renderForeground(); refreshStatus(); return START_STICKY
+        }
+        if (intent?.action == ACTION_ACKNOWLEDGE && ::base.isInitialized) {
+            intent.getStringExtra("session")?.let { capsuleState.acknowledgeFailure(it) }
+            renderForeground(); return START_STICKY
         }
         if (intent?.action == ACTION_REFRESH && ::base.isInitialized) { refreshStatus(); return START_STICKY }
         val b = intent?.getStringExtra("base") ?: Prefs(this).current ?: run { stopSelf(); return START_NOT_STICKY }
@@ -110,7 +114,7 @@ class EventService : Service() {
         if (task != null) {
             if (task != displayedCapsule) {
                 val n = TaskNotification.build(this, base, task.session, task.title, task.body,
-                    task.state, task.actions, capsule = true)
+                    task.state, task.actions, capsule = true, prompt = task.prompt, choices = task.choices)
                 foreground(NOTIF_CAPSULE, n)
                 displayedCapsule = task
             }
@@ -184,6 +188,8 @@ class EventService : Service() {
         if (!agentMessage && type != "test") {
             if (session.isBlank()) return
             val actions = o.optJSONArray("actions")?.let { list -> (0 until list.length()).map { list.optString(it) } } ?: emptyList()
+            val prompt = o.optString("prompt")
+            val choices = TaskChoice.read(o.optJSONArray("choices"))
             val eventBase = base
             main.post {
                 if (stopped || base != eventBase) return@post
@@ -194,10 +200,10 @@ class EventService : Service() {
                     "session.error" -> TaskNoticeState.FAILED
                     else -> TaskNoticeState.FINISHED
                 }
-                capsuleState.onEvent(CapsuleTask(session, title, body, state, actions), o.optLong("id"), now)
+                capsuleState.onEvent(CapsuleTask(session, title, body, state, actions, prompt, choices), o.optLong("id"), now)
                 renderForeground()
                 if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return@post
-                val notice = TaskNotification.build(localized, base, session, title, body, state, actions)
+                val notice = TaskNotification.build(localized, base, session, title, body, state, actions, prompt = prompt, choices = choices)
                 getSystemService(NotificationManager::class.java).notify(TaskNotification.id(session), notice)
             }
             return
@@ -232,7 +238,8 @@ class EventService : Service() {
                     snapshot.save(this, base)
                     StatusWidget.update(this)
                     updateAttention(snapshot.attentionCount)
-                    main.post { if (!stopped && base == statusBase) updateTaskCapsule(snapshot) }
+                    val live = (0 until items.length()).mapNotNull { items.optJSONObject(it)?.optString("name") }.toSet()
+                    main.post { if (!stopped && base == statusBase) updateTaskCapsule(snapshot, live) }
                 }
             } catch (_: Exception) {
                 invalidateStatus()
@@ -265,13 +272,19 @@ class EventService : Service() {
         main.post { capsuleState.onSnapshot(emptyList(), SystemClock.elapsedRealtime()); renderForeground() }
     }
 
-    private fun updateTaskCapsule(snapshot: WidgetSnapshot) {
+    private fun updateTaskCapsule(snapshot: WidgetSnapshot, live: Set<String>) {
         val now = SystemClock.elapsedRealtime()
         recentlyCompleted.entries.removeAll { now - it.value > 30_000 }
         val waiting = snapshot.waitingItems.filter { it.name !in recentlyCompleted }.map {
-            CapsuleTask(it.name, it.label, getString(R.string.event_waiting_body), TaskNoticeState.WAITING)
+            CapsuleTask(it.name, it.label, it.waitingBody.ifBlank { getString(R.string.event_waiting_body) },
+                TaskNoticeState.WAITING, prompt = it.prompt, choices = it.choices)
         }
-        capsuleState.onSnapshot(waiting, now)
+        val waitingIds = waiting.map { TaskNotification.id(it.session) }.toSet()
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.activeNotifications.filter {
+            it.notification.channelId == CH_EVENTS && it.notification.flags and Notification.FLAG_ONGOING_EVENT != 0 && it.id !in waitingIds
+        }.forEach { nm.cancel(it.id) }
+        capsuleState.onSnapshot(waiting, now, snapshot.runningItems.map { it.name }.toSet(), live)
         renderForeground()
     }
 
@@ -303,5 +316,6 @@ class EventService : Service() {
         const val ACTION_STOP = "com.roami.app.STOP"
         const val ACTION_REFRESH = "com.roami.app.REFRESH"
         const val ACTION_RESOLVE = "com.roami.app.RESOLVE"
+        const val ACTION_ACKNOWLEDGE = "com.roami.app.ACKNOWLEDGE"
     }
 }

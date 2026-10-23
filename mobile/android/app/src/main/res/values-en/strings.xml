@@ -7,4 +7,9 @@
     <string name="event_failed_chip">Error</string>
     <string name="event_waiting_body">Task needs your approval. Tap to open the session.</string>
     <string name="event_action_failed">Could not submit. Try again · %1$s</string>
+    <string name="event_finished_title">%1$s · completed</string>
+    <string name="event_failed_title">%1$s · failed</string>
+    <string name="event_acknowledge">Dismiss</string>
+    <string name="event_prompt_changed">The question changed. Open the session to see the current choices.</string>
+    <string name="event_all_choices">All choices</string>
 </resources>

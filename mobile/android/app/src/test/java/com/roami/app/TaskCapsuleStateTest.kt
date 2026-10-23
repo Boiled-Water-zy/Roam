@@ -46,4 +46,36 @@ class TaskCapsuleStateTest {
         assertEquals("first", state.current(4)?.session)
         assertEquals("second", state.current(4 + TaskCapsuleState.FLASH_MS)?.session)
     }
+
+    @Test fun failureRemainsUntilAcknowledgedOrTaskResumes() {
+        val state = TaskCapsuleState()
+        state.onEvent(task("failed", TaskNoticeState.FAILED), 1, 1)
+        assertEquals(TaskNoticeState.FAILED, state.current(60_000)?.state)
+        state.onSnapshot(emptyList(), 60_001, setOf("failed"), setOf("failed"))
+        assertNull(state.current(60_001))
+        state.onEvent(task("failed", TaskNoticeState.FAILED), 2, 60_002)
+        state.resolve("failed", 60_003)
+        assertNull(state.current(60_003))
+    }
+
+    @Test fun snapshotKeepsFullQuestionAndOptionsFromEvent() {
+        val state = TaskCapsuleState()
+        val question = CapsuleTask("s", "title", "Delete file?\n1. Yes\n2. No", TaskNoticeState.WAITING,
+            prompt = "current-question", choices = listOf(TaskChoice("1", "Yes"), TaskChoice("2", "No")))
+        state.onEvent(question, 1, 1)
+        state.onSnapshot(listOf(task("s", TaskNoticeState.WAITING)), 2)
+        assertEquals(question, state.current(2))
+    }
+
+    @Test fun nextQuestionAppearsImmediatelyAndOldResponseCannotClearIt() {
+        val state = TaskCapsuleState()
+        val first = CapsuleTask("s", "task", "first", TaskNoticeState.WAITING, prompt = "first")
+        val next = first.copy(body = "next", prompt = "next")
+        state.onEvent(first, 1, 1)
+        state.resolve("s", 2, "first")
+        state.onSnapshot(listOf(next), 3)
+        assertEquals(next, state.current(3))
+        state.resolve("s", 4, "first")
+        assertEquals(next, state.current(4))
+    }
 }
