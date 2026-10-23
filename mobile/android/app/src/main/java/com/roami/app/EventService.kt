@@ -44,6 +44,8 @@ class EventService : Service() {
     private var unfinished = 0
     private var unfinishedAt = 0L
     private val capsuleState = TaskCapsuleState()
+    private lateinit var eventRecovery: TaskEventRecovery
+    private val reconnect = Runnable { connect() }
     private var displayedCapsule: CapsuleTask? = null
     private var foregroundNotificationId = NOTIF_LINK
     private var linkText = ""
@@ -66,8 +68,13 @@ class EventService : Service() {
         }
         if (intent?.action == ACTION_REFRESH && ::base.isInitialized) { refreshStatus(); return START_STICKY }
         val b = intent?.getStringExtra("base") ?: Prefs(this).current ?: run { stopSelf(); return START_NOT_STICKY }
-        if (::base.isInitialized && base == b && ws != null) return START_STICKY
+        if (::base.isInitialized && base == b) {
+            if (ws == null) connect()
+            refreshStatus()
+            return START_STICKY
+        }
         base = b
+        eventRecovery = Prefs(this).taskEvents(base)
         capsuleState.reset()
         displayedCapsule = null
         main.removeCallbacks(capsuleTimeout)
@@ -77,6 +84,7 @@ class EventService : Service() {
         channels()
         stopped = false
         startFg(getString(R.string.link_connecting, host))
+        main.removeCallbacks(reconnect)
         ws?.close(1000, null); ws = null
         connect()
         main.removeCallbacks(statusLoop)
@@ -145,23 +153,34 @@ class EventService : Service() {
     }
 
     private fun connect() {
-        if (stopped) return
+        main.removeCallbacks(reconnect)
+        if (stopped || ws != null) return
         val cookie = CookieManager.getInstance().getCookie(base)
         if (cookie.isNullOrBlank()) { // 还没登录
             startFg(getString(R.string.link_login))
-            main.postDelayed({ connect() }, 15_000)
+            main.postDelayed(reconnect, 15_000)
             return
         }
         val wsUrl = base.replaceFirst("http", "ws") + "/api/events/ws"
-        val req = Request.Builder().url(wsUrl).header("Cookie", cookie).build()
+        val version = packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
+        val req = Request.Builder().url(wsUrl).header("Cookie", cookie).header("User-Agent", "RoamiApp/$version").build()
         ws = client().newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                backoff = 5_000
-                main.post { startFg(getString(R.string.link_connected, host)); refreshStatus() }
+                main.post {
+                    if (stopped || ws !== webSocket) return@post
+                    backoff = 5_000
+                    startFg(getString(R.string.link_connected, host)); refreshStatus()
+                }
             }
-            override fun onMessage(webSocket: WebSocket, text: String) { runCatching { onEvent(JSONObject(text)) } }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { retry(response?.code) }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { retry(null) }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                main.post { if (!stopped && ws === webSocket) runCatching { onEvent(JSONObject(text)) } }
+            }
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                main.post { if (ws === webSocket) retry(response?.code) }
+            }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                main.post { if (ws === webSocket) retry(null) }
+            }
         })
     }
 
@@ -169,7 +188,8 @@ class EventService : Service() {
         if (stopped) return
         ws = null
         main.post { startFg(if (code == 401) getString(R.string.link_login) else getString(R.string.link_connecting, host)) }
-        main.postDelayed({ connect() }, backoff)
+        main.removeCallbacks(reconnect)
+        main.postDelayed(reconnect, backoff)
         backoff = (backoff * 2).coerceAtMost(60_000)
     }
 
@@ -191,6 +211,7 @@ class EventService : Service() {
             val eventBase = base
             main.post {
                 if (stopped || base != eventBase) return@post
+                if (!eventRecovery.accept(o.optLong("id"))) return@post
                 val now = SystemClock.elapsedRealtime()
                 val state = when (type) {
                     "session.waiting" -> TaskNoticeState.WAITING
@@ -198,10 +219,20 @@ class EventService : Service() {
                     else -> TaskNoticeState.FINISHED
                 }
                 capsuleState.onEvent(CapsuleTask(session, title, body, state, actions, prompt, choices), o.optLong("id"), now)
-                renderForeground()
-                if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return@post
-                val notice = TaskNotification.build(localized, base, session, title, body, state, actions, prompt = prompt, choices = choices)
-                getSystemService(NotificationManager::class.java).notify(TaskNotification.id(session), notice)
+                try {
+                    renderForeground()
+                    if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        receipt(o.optLong("id"), "blocked", session)
+                        return@post
+                    }
+                    val notice = TaskNotification.build(localized, base, session, title, body, state, actions, prompt = prompt, choices = choices)
+                    getSystemService(NotificationManager::class.java).notify(TaskNotification.id(session), notice)
+                    Prefs(this).saveTaskEvents(base, eventRecovery)
+                    receipt(o.optLong("id"), "posted", session)
+                } catch (error: Exception) {
+                    android.util.Log.e("RoamiEvents", "Task notification failed", error)
+                    receipt(o.optLong("id"), "error", session)
+                }
             }
             return
         }
@@ -237,11 +268,33 @@ class EventService : Service() {
                     updateAttention(snapshot.attentionCount)
                     val live = (0 until items.length()).mapNotNull { items.optJSONObject(it)?.optString("name") }.toSet()
                     main.post { if (!stopped && base == statusBase) updateTaskCapsule(snapshot, live) }
+                    recoverTaskEvents(http, cookie, statusBase, snapshot.runningItems.map { it.name }.toSet())
                 }
             } catch (_: Exception) {
                 invalidateStatus()
             } finally { refreshing = false }
         }
+    }
+
+    private fun recoverTaskEvents(http: OkHttpClient, cookie: String, statusBase: String, running: Set<String>) {
+        runCatching {
+            val req = Request.Builder().url("$statusBase/api/inbox?limit=100").header("Cookie", cookie).build()
+            http.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) return@use
+                val items = JSONObject(response.body?.string() ?: "").getJSONObject("data").getJSONArray("items")
+                main.post {
+                    if (stopped || base != statusBase) return@post
+                    eventRecovery.recover(items, System.currentTimeMillis() / 1000, running).forEach { onEvent(it) }
+                    main.post { if (!stopped && base == statusBase) Prefs(this).saveTaskEvents(base, eventRecovery) }
+                }
+            }
+        }
+    }
+
+    private fun receipt(id: Long, status: String, session: String) {
+        if (id <= 0) return
+        ws?.send(JSONObject().put("type", "receipt").put("id", id).put("status", status)
+            .put("capsule", displayedCapsule?.session == session).toString())
     }
 
     private fun unfinishedCount(http: OkHttpClient, cookie: String): Int {
@@ -299,7 +352,7 @@ class EventService : Service() {
         nm.notify(NOTIF_ATTENTION, notification)
     }
 
-    override fun onDestroy() { stopped = true; main.removeCallbacks(statusLoop); main.removeCallbacks(capsuleTimeout); ws?.close(1000, null); super.onDestroy() }
+    override fun onDestroy() { stopped = true; main.removeCallbacks(statusLoop); main.removeCallbacks(capsuleTimeout); main.removeCallbacks(reconnect); ws?.close(1000, null); super.onDestroy() }
 
     companion object {
         const val CH_LINK = "link_v2"

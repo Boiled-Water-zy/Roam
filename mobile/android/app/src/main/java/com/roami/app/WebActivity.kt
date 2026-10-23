@@ -208,7 +208,7 @@ class WebActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
     }
 
-    override fun onResume() { super.onResume(); shake.start(); web.onResume(); apkUpdate.onResume() }
+    override fun onResume() { super.onResume(); shake.start(); web.onResume(); apkUpdate.onResume(); startEvents() }
     override fun onPause() { super.onPause(); shake.stop(); web.onPause() }
     override fun onDestroy() {
         pendingAudio?.deny()

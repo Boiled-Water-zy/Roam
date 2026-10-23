@@ -39,4 +39,12 @@ class Prefs(ctx: Context) {
 
     fun trusted(host: String): String? = sp.getString("fp:$host", null)
     fun trust(host: String, fp: String) = sp.edit().putString("fp:$host", fp).apply()
+
+    fun taskEvents(base: String): TaskEventRecovery = TaskEventRecovery(runCatching {
+        JSONObject(sp.getString("task-events:$base", "{}") ?: "{}")
+    }.getOrDefault(JSONObject()))
+
+    fun saveTaskEvents(base: String, recovery: TaskEventRecovery) {
+        sp.edit().putString("task-events:$base", recovery.snapshot()).apply()
+    }
 }
