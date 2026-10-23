@@ -28,8 +28,11 @@ object TaskNotification {
             TaskNoticeState.WAITING -> R.string.event_waiting_title
             TaskNoticeState.FINISHED -> R.string.event_finished_title
             TaskNoticeState.FAILED -> R.string.event_failed_title
-        }, title)
-        val detail = if (retry) ctx.getString(R.string.event_action_failed, body) else body
+        })
+        val content = if (state == TaskNoticeState.FINISHED)
+            TaskNotificationText.summary(body).ifBlank { ctx.getString(R.string.event_view_result) }
+            else body
+        val detail = if (retry) ctx.getString(R.string.event_action_failed, content) else content
         val builder = Notification.Builder(ctx, if (capsule) EventService.CH_CAPSULE else EventService.CH_EVENTS)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(heading)
@@ -41,6 +44,7 @@ object TaskNotification {
             .setOnlyAlertOnce(live && !retry)
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setPriority(Notification.PRIORITY_HIGH)
+        TaskNotificationText.taskName(title, session)?.let { builder.setSubText(it) }
         if (capsule && Build.VERSION.SDK_INT >= 36) builder.setShortCriticalText(ctx.getString(when (state) {
             TaskNoticeState.WAITING -> R.string.event_waiting_chip
             TaskNoticeState.FINISHED -> R.string.event_finished_chip
