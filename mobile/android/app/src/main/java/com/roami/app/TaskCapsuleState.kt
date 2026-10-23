@@ -31,13 +31,12 @@ class TaskCapsuleState {
                 if (flash != null) flashUntil = 0L
             }
             TaskNoticeState.FAILED -> {
-                waiting.remove(task.session)
+                resolve(task.session, now)
                 failed[task.session] = task
                 if (flash != null) flashUntil = 0L
             }
             TaskNoticeState.FINISHED -> {
-                waiting.remove(task.session)
-                failed.remove(task.session)
+                resolve(task.session, now)
                 if (flash == null) {
                     flash = task
                     flashUntil = if (waiting.isEmpty() && failed.isEmpty()) now + FLASH_MS else 0L
@@ -52,7 +51,7 @@ class TaskCapsuleState {
         val seen = waitingItems.map { it.session }.toSet()
         waiting.keys.retainAll(seen)
         waitingItems.forEach { task ->
-            if (task.prompt.isNotBlank() && resolvedPrompts[task.session]?.let { it.isNotBlank() && it != task.prompt } == true) {
+            if (task.prompt.isNotBlank() && resolvedPrompts[task.session]?.let { it != task.prompt } == true) {
                 resolved.remove(task.session)
                 resolvedPrompts.remove(task.session)
             }

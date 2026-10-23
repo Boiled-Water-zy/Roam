@@ -48,7 +48,6 @@ class EventService : Service() {
     private var foregroundNotificationId = NOTIF_LINK
     private var linkText = ""
     private val capsuleTimeout = Runnable { renderForeground() }
-    private val recentlyCompleted = mutableMapOf<String, Long>()
     private val statusLoop = object : Runnable {
         override fun run() { refreshStatus(); main.postDelayed(this, 15_000) }
     }
@@ -72,7 +71,6 @@ class EventService : Service() {
         capsuleState.reset()
         displayedCapsule = null
         main.removeCallbacks(capsuleTimeout)
-        recentlyCompleted.clear()
         unfinished = 0
         unfinishedAt = 0L
         host = runCatching { java.net.URI(base).host }.getOrNull() ?: base
@@ -194,7 +192,6 @@ class EventService : Service() {
             main.post {
                 if (stopped || base != eventBase) return@post
                 val now = SystemClock.elapsedRealtime()
-                if (type != "session.waiting") recentlyCompleted[session] = now
                 val state = when (type) {
                     "session.waiting" -> TaskNoticeState.WAITING
                     "session.error" -> TaskNoticeState.FAILED
@@ -274,8 +271,7 @@ class EventService : Service() {
 
     private fun updateTaskCapsule(snapshot: WidgetSnapshot, live: Set<String>) {
         val now = SystemClock.elapsedRealtime()
-        recentlyCompleted.entries.removeAll { now - it.value > 30_000 }
-        val waiting = snapshot.waitingItems.filter { it.name !in recentlyCompleted }.map {
+        val waiting = snapshot.waitingItems.map {
             CapsuleTask(it.name, it.label, it.waitingBody.ifBlank { getString(R.string.event_waiting_body) },
                 TaskNoticeState.WAITING, prompt = it.prompt, choices = it.choices)
         }

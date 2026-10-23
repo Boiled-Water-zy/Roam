@@ -78,4 +78,35 @@ class TaskCapsuleStateTest {
         state.resolve("s", 4, "first")
         assertEquals(next, state.current(4))
     }
+
+    @Test fun completionRejectsOldSnapshotButAllowsNextQuestionImmediately() {
+        val state = TaskCapsuleState()
+        val old = CapsuleTask("s", "task", "old", TaskNoticeState.WAITING, prompt = "old")
+        val next = old.copy(body = "next", prompt = "next")
+        state.onEvent(old, 1, 1)
+        state.onEvent(task("s", TaskNoticeState.FINISHED), 2, 2)
+        state.onSnapshot(listOf(old), 3)
+        assertEquals(TaskNoticeState.FINISHED, state.current(3)?.state)
+        state.onSnapshot(listOf(next), 4)
+        assertEquals(next, state.current(4))
+    }
+
+    @Test fun failureDoesNotResurrectAnsweredQuestionFromSnapshot() {
+        val state = TaskCapsuleState()
+        val old = CapsuleTask("s", "task", "old", TaskNoticeState.WAITING, prompt = "old")
+        state.onEvent(old, 1, 1)
+        state.onEvent(task("s", TaskNoticeState.FAILED), 2, 2)
+        state.onSnapshot(listOf(old), 3)
+        assertEquals(TaskNoticeState.FAILED, state.current(3)?.state)
+        state.onSnapshot(listOf(old.copy(prompt = "next")), 4)
+        assertEquals(TaskNoticeState.WAITING, state.current(4)?.state)
+    }
+
+    @Test fun firstQuestionAfterCompletionIsNotSuppressed() {
+        val state = TaskCapsuleState()
+        state.onEvent(task("s", TaskNoticeState.FINISHED), 1, 1)
+        val question = CapsuleTask("s", "task", "new", TaskNoticeState.WAITING, prompt = "new")
+        state.onSnapshot(listOf(question), 2)
+        assertEquals(question, state.current(2))
+    }
 }

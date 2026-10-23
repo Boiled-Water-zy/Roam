@@ -76,6 +76,7 @@ object TaskNotification {
             builder.addAction(Notification.Action.Builder(actionIcon, ctx.getString(R.string.event_acknowledge), dismiss).build())
         }
         val notification = builder.build()
+        notification.extras.putString("roami.session", session)
         notification.extras.putString("roami.taskState", state.name)
         notification.extras.putString("roami.prompt", prompt)
         if (capsule && Build.VERSION.SDK_INT >= 36) {

@@ -83,12 +83,25 @@ class ActionReceiver : BroadcastReceiver() {
     private fun showRetry(ctx: Context, intent: Intent, base: String, session: String) {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val title = intent.getStringExtra("title") ?: session
+        val notifications = ctx.getSystemService(NotificationManager::class.java)
+        val prompt = intent.getStringExtra("prompt")
+        val newer = notifications.activeNotifications.any {
+            it.tag != "task-response" && it.notification.extras.getString("roami.session") == session &&
+                (it.notification.extras.getString("roami.taskState") != TaskNoticeState.WAITING.name ||
+                    it.notification.extras.getString("roami.prompt") != prompt)
+        }
+        if (newer) {
+            val notice = TaskNotification.build(ctx, base, session, title,
+                ctx.getString(R.string.event_prompt_changed), TaskNoticeState.FINISHED)
+            notifications.notify("task-response", TaskNotification.id(session), notice)
+            return
+        }
         val body = intent.getStringExtra("body") ?: ""
         val choices = runCatching { TaskChoice.read(JSONArray(intent.getStringExtra("choices") ?: "[]")) }.getOrDefault(emptyList())
         val notice = TaskNotification.build(ctx, base, session, title, body, TaskNoticeState.WAITING,
             if (intent.hasExtra("prompt")) emptyList() else listOf("allow", "deny"), retry = true,
             prompt = intent.getStringExtra("prompt") ?: "", choices = choices)
-        ctx.getSystemService(NotificationManager::class.java).notify(TaskNotification.id(session), notice)
+        notifications.notify(TaskNotification.id(session), notice)
     }
 
     private fun resolve(ctx: Context, session: String, prompt: String? = null) {
