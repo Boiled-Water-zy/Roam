@@ -80,6 +80,7 @@ func (e *sessionEvents) observe(in observeInput) []PushPayload {
 			if st.streak >= 2 && !st.notified {
 				st.notified = true
 				p := PushPayload{Type: "session.waiting", Session: name, Label: label, Title: label, Body: prompt.body(), Prompt: prompt.token(), Choices: prompt.Choices}
+				p.SelectionMode = prompt.selectionMode()
 				if _, opts, ok := waitingPrompt(cap); (ok && len(opts) > 0 && yesFirst.MatchString(opts[0])) || yesNoPat.MatchString(waitStripCtl(cap)) {
 					p.Actions = []string{"allow", "deny"}
 				}

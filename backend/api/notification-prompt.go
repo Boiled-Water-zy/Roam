@@ -21,9 +21,36 @@ type notificationPrompt struct {
 	Selected int
 	Numbered bool
 	YesNo    bool
+	Multiple bool
 }
 
 var notificationBoxLead = regexp.MustCompile(`^\s*[│┃|╎┆┊╭╰├╞┝─━═]+`)
+var notificationMultiHint = regexp.MustCompile(`(?i)(space|空格).{0,24}(toggle|select|check|选择|勾选)|多选|select more than one`)
+var notificationCheckbox = regexp.MustCompile(`^\s*\[(?: |x|X|✓)\]\s*`)
+
+func (p notificationPrompt) selectionMode() string {
+	if p.Multiple {
+		return "multiple"
+	}
+	return "single"
+}
+
+func notificationPromptMode(p notificationPrompt, screen string) notificationPrompt {
+	var tail []string
+	rows := strings.Split(waitStripCtl(screen), "\n")
+	for i := len(rows) - 1; i >= 0 && len(tail) < 12; i-- {
+		if line := strings.TrimSpace(rows[i]); line != "" {
+			tail = append(tail, line)
+		}
+	}
+	p.Multiple = notificationMultiHint.MatchString(strings.Join(tail, "\n"))
+	if p.Multiple {
+		for i := range p.Choices {
+			p.Choices[i].Label = notificationCheckbox.ReplaceAllString(p.Choices[i].Label, "")
+		}
+	}
+	return p
+}
 
 func (p notificationPrompt) token() string {
 	b, _ := jsonMarshalPrompt(p)
@@ -36,7 +63,8 @@ func jsonMarshalPrompt(p notificationPrompt) ([]byte, error) {
 		Question        string
 		Choices         []NotificationChoice
 		Numbered, YesNo bool
-	}{p.Question, p.Choices, p.Numbered, p.YesNo})
+		Multiple        bool `json:",omitempty"`
+	}{p.Question, p.Choices, p.Numbered, p.YesNo, p.Multiple})
 }
 
 func notificationPromptFromScreen(screen string) (notificationPrompt, bool) {
@@ -78,7 +106,7 @@ func notificationPromptFromScreen(screen string) (notificationPrompt, bool) {
 				}
 			}
 		}
-		return p, true
+		return notificationPromptMode(p, screen), true
 	}
 	return unnumberedNotificationPrompt(screen)
 }
@@ -143,7 +171,7 @@ func unnumberedNotificationPrompt(screen string) (notificationPrompt, bool) {
 			}
 		}
 		p.Question = strings.Join(question, " ")
-		return p, true
+		return notificationPromptMode(p, screen), true
 	}
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := waitClean(lines[i])

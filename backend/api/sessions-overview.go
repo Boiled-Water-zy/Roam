@@ -72,23 +72,24 @@ func (l *liveTable) prune(alive map[string]string) {
 }
 
 type overviewItem struct {
-	Prompt       string               `json:"prompt,omitempty"`
-	Choices      []NotificationChoice `json:"choices,omitempty"`
-	WaitingBody  string               `json:"waitingBody,omitempty"`
-	Name         string               `json:"name"`
-	Label        string               `json:"label"`
-	LastActivity int64                `json:"lastActivity"`
-	Dormant      bool                 `json:"dormant"`
-	ProjectKey   string               `json:"projectKey,omitempty"`
-	Project      string               `json:"project,omitempty"`
-	ProjectDir   string               `json:"projectDir,omitempty"`
-	Worktree     string               `json:"worktree,omitempty"`
-	Branch       string               `json:"branch,omitempty"`
-	Agent        string               `json:"agent,omitempty"`
-	Running      bool                 `json:"running"`
-	Waiting      bool                 `json:"waiting"`
-	Tail         string               `json:"tail,omitempty"`
-	YesNo        bool                 `json:"yesNo,omitempty"`
+	SelectionMode string               `json:"selectionMode,omitempty"`
+	Prompt        string               `json:"prompt,omitempty"`
+	Choices       []NotificationChoice `json:"choices,omitempty"`
+	WaitingBody   string               `json:"waitingBody,omitempty"`
+	Name          string               `json:"name"`
+	Label         string               `json:"label"`
+	LastActivity  int64                `json:"lastActivity"`
+	Dormant       bool                 `json:"dormant"`
+	ProjectKey    string               `json:"projectKey,omitempty"`
+	Project       string               `json:"project,omitempty"`
+	ProjectDir    string               `json:"projectDir,omitempty"`
+	Worktree      string               `json:"worktree,omitempty"`
+	Branch        string               `json:"branch,omitempty"`
+	Agent         string               `json:"agent,omitempty"`
+	Running       bool                 `json:"running"`
+	Waiting       bool                 `json:"waiting"`
+	Tail          string               `json:"tail,omitempty"`
+	YesNo         bool                 `json:"yesNo,omitempty"`
 }
 
 func (a *API) SessionsOverview(c *gin.Context) {
@@ -148,6 +149,7 @@ func (a *API) SessionsOverview(c *gin.Context) {
 			it.Running = snap.running()
 			if snap.Waiting && snap.Prompt != nil {
 				it.Prompt, it.Choices, it.WaitingBody = snap.Prompt.token(), snap.Prompt.Choices, snap.Prompt.body()
+				it.SelectionMode = snap.Prompt.selectionMode()
 			}
 		}
 		items = append(items, it)

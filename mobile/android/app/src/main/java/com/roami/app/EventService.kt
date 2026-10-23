@@ -34,19 +34,21 @@ import kotlin.concurrent.thread
  * 登录态用 WebView 里的 Cookie；还没登录就每 15s 看一眼，登录了才连。
  */
 class EventService : Service() {
-    private lateinit var base: String
+    @Volatile private lateinit var base: String
     private lateinit var host: String
     private var ws: WebSocket? = null
     private var backoff = 5_000L
     private val main = Handler(Looper.getMainLooper())
-    private var stopped = false
+    @Volatile private var stopped = false
     @Volatile private var refreshing = false
+    private var eventRevision = 0L
     private var unfinished = 0
     private var unfinishedAt = 0L
     private val capsuleState = TaskCapsuleState()
     private lateinit var eventRecovery: TaskEventRecovery
     private val reconnect = Runnable { connect() }
     private var displayedCapsule: CapsuleTask? = null
+    private var displayedCount = 0
     private var foregroundNotificationId = NOTIF_LINK
     private var linkText = ""
     private val capsuleTimeout = Runnable { renderForeground() }
@@ -57,12 +59,16 @@ class EventService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { stopped = true; ws?.close(1000, null); getSystemService(NotificationManager::class.java).cancel(NOTIF_ATTENTION); capsuleState.reset(); stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP) { stopped = true; ws?.close(1000, null); getSystemService(NotificationManager::class.java).cancel(NOTIF_ATTENTION); capsuleState.reset(); if (::base.isInitialized) { Prefs(this).saveTaskCards(base, emptyList()); sendBroadcast(Intent(ACTION_TASK_CARDS_CHANGED).setPackage(packageName).putExtra("base", base)) }; stopSelf(); return START_NOT_STICKY }
         if (intent?.action == ACTION_RESOLVE && ::base.isInitialized) {
+            if (intent.getStringExtra("base") != base) return START_STICKY
+            eventRevision++
             intent.getStringExtra("session")?.let { capsuleState.resolve(it, SystemClock.elapsedRealtime(), intent.getStringExtra("prompt")) }
             renderForeground(); refreshStatus(); return START_STICKY
         }
         if (intent?.action == ACTION_ACKNOWLEDGE && ::base.isInitialized) {
+            if (intent.getStringExtra("base") != base) return START_STICKY
+            eventRevision++
             intent.getStringExtra("session")?.let { capsuleState.acknowledgeFailure(it) }
             renderForeground(); return START_STICKY
         }
@@ -94,6 +100,8 @@ class EventService : Service() {
 
     private fun channels() {
         val nm = getSystemService(NotificationManager::class.java)
+        nm.activeNotifications.filter { it.notification.extras.containsKey("roami.taskState") &&
+            !it.notification.extras.containsKey("roami.base") }.forEach { nm.cancel(it.tag, it.id) }
         nm.cancel("task-progress", 3)
         nm.createNotificationChannel(NotificationChannel(CH_LINK, getString(R.string.ch_link), NotificationManager.IMPORTANCE_MIN).apply { setShowBadge(false) })
         nm.createNotificationChannel(NotificationChannel(CH_EVENTS, getString(R.string.ch_events), NotificationManager.IMPORTANCE_HIGH).apply {
@@ -116,18 +124,23 @@ class EventService : Service() {
         main.removeCallbacks(capsuleTimeout)
         val now = SystemClock.elapsedRealtime()
         val task = if (Build.VERSION.SDK_INT >= 36) capsuleState.current(now) else null
+        val tasks = capsuleState.pending(now)
+        if (Prefs(this).saveTaskCards(base, tasks)) sendBroadcast(Intent(ACTION_TASK_CARDS_CHANGED).setPackage(packageName).putExtra("base", base))
         capsuleState.nextChangeDelay(now)?.let { main.postDelayed(capsuleTimeout, it) }
         if (task != null) {
-            if (task != displayedCapsule) {
+            if (task != displayedCapsule || tasks.size != displayedCount) {
                 val n = TaskNotification.build(this, base, task.session, task.title, task.body,
-                    task.state, task.actions, capsule = true, prompt = task.prompt, choices = task.choices)
+                    task.state, task.actions, capsule = true, prompt = task.prompt, choices = task.choices,
+                    selectionMode = task.selectionMode, attentionCount = tasks.size)
                 foreground(NOTIF_CAPSULE, n)
                 displayedCapsule = task
+                displayedCount = tasks.size
             }
             return
         }
         if (displayedCapsule == null && linkText.isEmpty()) return
         displayedCapsule = null
+        displayedCount = 0
         val stop = PendingIntent.getService(this, 0, Intent(this, EventService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         val open = PendingIntent.getActivity(this, 0, Intent(this, WebActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(this, CH_LINK)
@@ -143,11 +156,12 @@ class EventService : Service() {
         foregroundNotificationId = id
     }
 
-    private fun client(): OkHttpClient {
-        val tm = Tls.Pinned(this, host)
+    private fun client(server: String = base): OkHttpClient {
+        val serverHost = java.net.URI(server).host
+        val tm = Tls.Pinned(this, serverHost)
         return OkHttpClient.Builder()
             .sslSocketFactory(Tls.sslContext(tm).socketFactory, tm)
-            .hostnameVerifier { h, _ -> h == host } // 指纹已经核过；自签证书的 SAN 常不带这个地址
+            .hostnameVerifier { h, _ -> h == serverHost } // 指纹已经核过；自签证书的 SAN 常不带这个地址
             .pingInterval(30, TimeUnit.SECONDS)
             .build()
     }
@@ -208,25 +222,28 @@ class EventService : Service() {
             val actions = o.optJSONArray("actions")?.let { list -> (0 until list.length()).map { list.optString(it) } } ?: emptyList()
             val prompt = o.optString("prompt")
             val choices = TaskChoice.read(o.optJSONArray("choices"))
+            val selectionMode = o.optString("selectionMode", "single")
             val eventBase = base
             main.post {
                 if (stopped || base != eventBase) return@post
                 if (!eventRecovery.accept(o.optLong("id"))) return@post
+                eventRevision++
                 val now = SystemClock.elapsedRealtime()
                 val state = when (type) {
                     "session.waiting" -> TaskNoticeState.WAITING
                     "session.error" -> TaskNoticeState.FAILED
                     else -> TaskNoticeState.FINISHED
                 }
-                capsuleState.onEvent(CapsuleTask(session, title, body, state, actions, prompt, choices), o.optLong("id"), now)
+                capsuleState.onEvent(CapsuleTask(session, title, body, state, actions, prompt, choices, selectionMode), o.optLong("id"), now)
                 try {
                     renderForeground()
                     if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                         receipt(o.optLong("id"), "blocked", session)
                         return@post
                     }
-                    val notice = TaskNotification.build(localized, base, session, title, body, state, actions, prompt = prompt, choices = choices)
-                    getSystemService(NotificationManager::class.java).notify(TaskNotification.id(session), notice)
+                    val notice = TaskNotification.build(localized, base, session, title, body, state, actions, prompt = prompt, choices = choices,
+                        selectionMode = selectionMode, attentionCount = capsuleState.pending(now).size)
+                    getSystemService(NotificationManager::class.java).notify(TaskNotification.tag(base), TaskNotification.id(session), notice)
                     Prefs(this).saveTaskEvents(base, eventRecovery)
                     receipt(o.optLong("id"), "posted", session)
                 } catch (error: Exception) {
@@ -252,26 +269,35 @@ class EventService : Service() {
     private fun refreshStatus() {
         if (stopped || refreshing || !::base.isInitialized) return
         val cookie = CookieManager.getInstance().getCookie(base)
-        if (cookie.isNullOrBlank()) { invalidateStatus(); return }
+        if (cookie.isNullOrBlank()) { invalidateStatus(clearTasks = true); return }
         refreshing = true
         val statusBase = base
+        val statusRevision = eventRevision
         thread {
             try {
-                val http = client()
-                val req = Request.Builder().url("$base/api/sessions/overview").header("Cookie", cookie).build()
+                val http = client(statusBase)
+                val req = Request.Builder().url("$statusBase/api/sessions/overview").header("Cookie", cookie).build()
                 http.newCall(req).execute().use { response ->
-                    if (!response.isSuccessful) { invalidateStatus(); return@use }
+                    if (!response.isSuccessful) { invalidateStatus(clearTasks = response.code == 401 || response.code == 403, statusBase = statusBase); return@use }
                     val items = JSONObject(response.body?.string() ?: "").getJSONObject("data").getJSONArray("items")
-                    val snapshot = WidgetSnapshot.fromOverview(items).copy(unfinished = unfinishedCount(http, cookie))
-                    snapshot.save(this, base)
-                    StatusWidget.update(this)
-                    updateAttention(snapshot.attentionCount)
+                    val snapshot = WidgetSnapshot.fromOverview(items).copy(unfinished = unfinishedCount(http, cookie, statusBase))
                     val live = (0 until items.length()).mapNotNull { items.optJSONObject(it)?.optString("name") }.toSet()
-                    main.post { if (!stopped && base == statusBase) updateTaskCapsule(snapshot, live) }
+                    main.post {
+                        if (stopped || base != statusBase) return@post
+                        // A response started before a task event must not erase its newer question.
+                        if (eventRevision != statusRevision) {
+                            main.postDelayed({ if (!stopped && base == statusBase) refreshStatus() }, 250)
+                            return@post
+                        }
+                        snapshot.save(this, statusBase)
+                        StatusWidget.update(this)
+                        updateAttention(snapshot.attentionCount)
+                        updateTaskCapsule(snapshot, live)
+                    }
                     recoverTaskEvents(http, cookie, statusBase, snapshot.runningItems.map { it.name }.toSet())
                 }
             } catch (_: Exception) {
-                invalidateStatus()
+                invalidateStatus(statusBase = statusBase)
             } finally { refreshing = false }
         }
     }
@@ -297,13 +323,14 @@ class EventService : Service() {
             .put("capsule", displayedCapsule?.session == session).toString())
     }
 
-    private fun unfinishedCount(http: OkHttpClient, cookie: String): Int {
+    private fun unfinishedCount(http: OkHttpClient, cookie: String, statusBase: String): Int {
+        if (stopped || base != statusBase) return 0
         val now = SystemClock.elapsedRealtime()
         if (unfinishedAt != 0L && now - unfinishedAt < 60_000) return unfinished
         try {
-            val req = Request.Builder().url("$base/api/projects").header("Cookie", cookie).build()
+            val req = Request.Builder().url("$statusBase/api/projects").header("Cookie", cookie).build()
             http.newCall(req).execute().use { response ->
-                if (response.isSuccessful) {
+                if (response.isSuccessful && !stopped && base == statusBase) {
                     val projects = JSONObject(response.body?.string() ?: "").getJSONObject("data").getJSONArray("projects")
                     unfinished = WidgetSnapshot.unfinishedFromProjects(projects)
                     unfinishedAt = now
@@ -314,25 +341,29 @@ class EventService : Service() {
         return unfinished
     }
 
-    private fun invalidateStatus() {
-        unfinished = 0
-        unfinishedAt = 0L
-        if (WidgetSnapshot.clear(this)) StatusWidget.update(this)
-        updateAttention(0)
-        main.post { capsuleState.onSnapshot(emptyList(), SystemClock.elapsedRealtime()); renderForeground() }
+    private fun invalidateStatus(clearTasks: Boolean = false, statusBase: String = base) {
+        main.post {
+            if (stopped || base != statusBase) return@post
+            unfinished = 0
+            unfinishedAt = 0L
+            if (WidgetSnapshot.clear(this)) StatusWidget.update(this)
+            updateAttention(0)
+            if (clearTasks) capsuleState.reset()
+            renderForeground()
+        }
     }
 
     private fun updateTaskCapsule(snapshot: WidgetSnapshot, live: Set<String>) {
         val now = SystemClock.elapsedRealtime()
         val waiting = snapshot.waitingItems.map {
             CapsuleTask(it.name, it.label, it.waitingBody.ifBlank { getString(R.string.event_waiting_body) },
-                TaskNoticeState.WAITING, prompt = it.prompt, choices = it.choices)
+                TaskNoticeState.WAITING, prompt = it.prompt, choices = it.choices, selectionMode = it.selectionMode)
         }
         val waitingIds = waiting.map { TaskNotification.id(it.session) }.toSet()
         val nm = getSystemService(NotificationManager::class.java)
         nm.activeNotifications.filter {
-            it.notification.channelId == CH_EVENTS && it.notification.flags and Notification.FLAG_ONGOING_EVENT != 0 && it.id !in waitingIds
-        }.forEach { nm.cancel(it.id) }
+            it.tag == TaskNotification.tag(base) && it.notification.channelId == CH_EVENTS && it.notification.flags and Notification.FLAG_ONGOING_EVENT != 0 && it.id !in waitingIds
+        }.forEach { nm.cancel(it.tag, it.id) }
         capsuleState.onSnapshot(waiting, now, snapshot.runningItems.map { it.name }.toSet(), live)
         renderForeground()
     }
@@ -364,6 +395,7 @@ class EventService : Service() {
         const val NOTIF_CAPSULE = 4
         const val ACTION_STOP = "com.roami.app.STOP"
         const val ACTION_REFRESH = "com.roami.app.REFRESH"
+        const val ACTION_TASK_CARDS_CHANGED = "com.roami.app.TASK_CARDS_CHANGED"
         const val ACTION_RESOLVE = "com.roami.app.RESOLVE"
         const val ACTION_ACKNOWLEDGE = "com.roami.app.ACKNOWLEDGE"
     }

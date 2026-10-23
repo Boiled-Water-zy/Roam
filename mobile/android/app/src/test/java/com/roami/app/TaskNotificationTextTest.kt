@@ -27,4 +27,18 @@ class TaskNotificationTextTest {
         assertFalse(result.contains('\uFFFD'))
         assertEquals("\uD83D\uDE80…", result.takeLast(3))
     }
+
+    @Test fun completionKeepsExplicitUnverifiedResult() {
+        val body = "已修复手机会话同步，相关单测通过。构建包已更新。尚未完成 OPPO 实机验证。"
+        assertEquals("已修复手机会话同步，相关单测通过。\n尚未完成 OPPO 实机验证。", TaskNotificationText.resultDetails(body))
+    }
+
+    @Test fun questionKeepsCommandsAndAllChoicesVerbatim() {
+        val choices = listOf(TaskChoice("1", "删除 **/generated/**"), TaskChoice("2", "保留文件"))
+        assertEquals("确认操作？\n1. 删除 **/generated/**\n2. 保留文件", TaskNotificationText.questionDetails("确认操作？", choices))
+    }
+
+    @Test fun terminalHyperlinksDoNotLeakEscapeSequencesIntoSummary() {
+        assertEquals("已生成页面预览。", TaskNotificationText.summary("已生成\u001B]8;;https://example.test\u0007页面预览\u001B]8;;\u0007。"))
+    }
 }

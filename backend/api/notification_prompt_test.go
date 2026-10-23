@@ -31,6 +31,25 @@ func TestNotificationPromptBoxedUnnumbered(t *testing.T) {
 	}
 }
 
+func TestMultipleNotificationPromptRejectsSingleShortcut(t *testing.T) {
+	screen := "Choose platforms\n ❯ [ ] ColorOS 16\n   [x] ColorOS 17\n Enter to confirm · Space to toggle"
+	p, ok := notificationPromptFromScreen(screen)
+	if !ok || !p.Multiple || p.selectionMode() != "multiple" || len(p.Choices) != 2 || p.Choices[0].Label != "ColorOS 16" {
+		t.Fatalf("bad multiple choice: %+v", p)
+	}
+	after, _ := notificationPromptFromScreen(strings.Replace(screen, "[ ]", "[x]", 1))
+	if p.token() != after.token() {
+		t.Fatal("checkbox selection changed prompt identity")
+	}
+	err := respondToNotification(p.token(), "1", func() (string, error) { return screen, nil }, func(...string) error {
+		t.Fatal("multiple choice sent an unsafe single shortcut")
+		return nil
+	})
+	if !errors.Is(err, errPromptChanged) {
+		t.Fatalf("expected conflict: %v", err)
+	}
+}
+
 func TestNotificationResponseRejectsStaleQuestion(t *testing.T) {
 	p, _ := notificationPromptFromScreen(waitScreen)
 	err := respondToNotification(p.token(), "1", func() (string, error) { return strings.Replace(waitScreen, "proceed", "delete", 1), nil }, func(...string) error { t.Fatal("stale request sent input"); return nil })

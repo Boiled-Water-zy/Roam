@@ -20,7 +20,7 @@ func respondToNotification(token, choice string, capture func() (string, error),
 		return err
 	}
 	p, ok := notificationPromptFromScreen(screen)
-	if !ok || p.token() != token {
+	if !ok || p.token() != token || p.Multiple {
 		return errPromptChanged
 	}
 	if p.YesNo {

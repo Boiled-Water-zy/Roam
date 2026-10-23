@@ -25,6 +25,7 @@
         <activity android:name=".WebActivity" android:exported="false" android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustNothing" />
+        <activity android:name=".TaskNoticeListActivity" android:exported="false" />
         <service android:name=".EventService" android:exported="false" android:foregroundServiceType="dataSync" />
         <receiver android:name=".ActionReceiver" android:exported="false" />
         <receiver android:name=".StatusWidget" android:exported="true">

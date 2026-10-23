@@ -2,7 +2,8 @@ package com.roami.app
 
 data class CapsuleTask(val session: String, val title: String, val body: String,
                        val state: TaskNoticeState, val actions: List<String> = emptyList(),
-                       val prompt: String = "", val choices: List<TaskChoice> = emptyList())
+                       val prompt: String = "", val choices: List<TaskChoice> = emptyList(),
+                       val selectionMode: String = "single")
 
 class TaskCapsuleState {
     private val waiting = linkedMapOf<String, CapsuleTask>()
@@ -22,6 +23,7 @@ class TaskCapsuleState {
     fun onEvent(task: CapsuleTask, eventId: Long, now: Long) {
         if (eventId > 0 && !recentEvents.add(eventId)) return
         while (recentEvents.size > 128) recentEvents.remove(recentEvents.first())
+        clearCompletion(task.session)
         when (task.state) {
             TaskNoticeState.WAITING -> {
                 failed.remove(task.session)
@@ -71,6 +73,16 @@ class TaskCapsuleState {
     }
 
     fun acknowledgeFailure(session: String) { failed.remove(session) }
+
+    private fun clearCompletion(session: String) {
+        queued.removeAll { it.session == session }
+        if (flash?.session == session) { flash = null; flashUntil = 0L }
+    }
+
+    fun pending(now: Long): List<CapsuleTask> {
+        current(now)
+        return (waiting.values + failed.values + listOfNotNull(flash) + queued).distinctBy { it.session }
+    }
 
     fun current(now: Long): CapsuleTask? {
         waiting.values.firstOrNull()?.let { return it }

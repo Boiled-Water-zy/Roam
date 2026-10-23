@@ -47,4 +47,13 @@ class Prefs(ctx: Context) {
     fun saveTaskEvents(base: String, recovery: TaskEventRecovery) {
         sp.edit().putString("task-events:$base", recovery.snapshot()).apply()
     }
+
+    fun taskCards(base: String): List<CapsuleTask> = TaskNoticeIndex.decode(sp.getString("task-cards:$base", "[]") ?: "[]")
+
+    fun saveTaskCards(base: String, tasks: List<CapsuleTask>): Boolean {
+        val value = TaskNoticeIndex.encode(tasks)
+        if (sp.getString("task-cards:$base", "[]") == value) return false
+        sp.edit().putString("task-cards:$base", value).apply()
+        return true
+    }
 }
