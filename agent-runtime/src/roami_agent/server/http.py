@@ -15,7 +15,7 @@ from roami_agent.protocol.errors import DomainError
 from roami_agent.protocol.http import (
     CloseTaskSession,
     Compact,
-    Confirm,
+    ConfirmMemory,
     ConfirmTask,
     CreateConversation,
     CreateReminder,
@@ -529,6 +529,36 @@ def create_app(runtime, *, manage_lifecycle=True):
     async def tasks(owner: Owner, conversationId: str | None = None):
         return {"data": await runtime.tasks.list(owner, conversationId)}
 
+    @app.get("/v1/native-sessions")
+    async def native_sessions(owner: Owner, projectId: str | None = None):
+        return {"data": await runtime.native_sessions.list(owner, project_id=projectId)}
+
+    @app.get("/v1/native-sessions/{session_id}")
+    async def native_session(session_id: str, owner: Owner):
+        return {"data": await runtime.native_sessions.get(owner, session_id)}
+
+    @app.get("/v1/native-sessions/{session_id}/conversation")
+    async def native_conversation(
+        session_id: str,
+        owner: Owner,
+        before: int | None = Query(None, ge=1),
+        limit: int = Query(80, ge=1, le=200),
+    ):
+        return {
+            "data": await runtime.native_sessions.conversation(
+                owner, session_id, before=before, limit=limit
+            )
+        }
+
+    @app.get("/v1/native-sessions/{session_id}/events")
+    async def native_events(
+        session_id: str,
+        owner: Owner,
+        after: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=200),
+    ):
+        return {"data": await runtime.native_sessions.events(owner, session_id, after, limit)}
+
     @app.get("/v1/tasks/{task_id}")
     async def task_detail(task_id: str, owner: Owner):
         return {"data": await runtime.tasks.get(owner, task_id)}
@@ -655,7 +685,7 @@ def create_app(runtime, *, manage_lifecycle=True):
     async def memory_catalog(
         owner: Owner,
         query: str = Query("", max_length=1000),
-        state: Literal["active", "candidate", "conflict"] = "active",
+        state: Literal["active", "candidate", "conflict", "review"] = "active",
         conversationId: str | None = None,
         projectId: str | None = None,
         taskId: str | None = None,
@@ -663,6 +693,7 @@ def create_app(runtime, *, manage_lifecycle=True):
         timezone: str | None = None,
         kind: Literal["fact", "decision", "preference", "summary"] | None = None,
         personalOnly: bool = False,
+        scope: Literal["all", "personal", "project", "conversation", "task"] = "all",
         category: Literal["all", "knowledge", "activity"] = "all",
         limit: int = Query(20, ge=1, le=100),
         offset: int = Query(0, ge=0),
@@ -682,11 +713,28 @@ def create_app(runtime, *, manage_lifecycle=True):
                 timezone=timezone,
                 kind=kind,
                 personal_only=personalOnly,
+                scope=scope,
                 category=category,
                 limit=limit,
                 offset=offset,
             )
         }
+
+    @app.get("/v1/memories/facets")
+    async def memory_facets(
+        owner: Owner,
+        state: Literal["active", "review"] = "active",
+        category: Literal["knowledge", "activity"] = "knowledge",
+    ):
+        return {"data": await runtime.memory.catalog.facets(owner, state=state, category=category)}
+
+    @app.get("/v1/memories/{memory_id}/detail")
+    async def memory_detail(memory_id: str, owner: Owner):
+        return {"data": await runtime.memory.details.get(owner, memory_id)}
+
+    @app.get("/v1/memories/{memory_id}/history")
+    async def memory_history(memory_id: str, owner: Owner):
+        return {"data": await runtime.memory.details.history(owner, memory_id)}
 
     @app.get("/v1/memories/{memory_id}")
     async def get_memory(memory_id: str, owner: Owner):
@@ -713,8 +761,12 @@ def create_app(runtime, *, manage_lifecycle=True):
         return {"data": await runtime.memory.forget(owner, memory_id, forget_sources=forgetSources)}
 
     @app.post("/v1/memories/{memory_id}/confirm")
-    async def confirm_memory(memory_id: str, body: Confirm, owner: Owner):
-        return {"data": await runtime.memory.confirm(owner, memory_id, body.accepted)}
+    async def confirm_memory(memory_id: str, body: ConfirmMemory, owner: Owner):
+        return {
+            "data": await runtime.memory.confirm(
+                owner, memory_id, body.accepted, expected_current_id=body.expectedCurrentId
+            )
+        }
 
     @app.get("/v1/memories/{memory_id}/sources")
     async def memory_sources(memory_id: str, owner: Owner):
