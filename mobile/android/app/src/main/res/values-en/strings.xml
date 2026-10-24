@@ -27,4 +27,5 @@
     <string name="event_acknowledge">Dismiss</string>
     <string name="event_prompt_changed">The question changed. Open the session to see the current choices.</string>
     <string name="event_all_choices">All choices</string>
+    <string name="ch_task_history">Task history</string>
 </resources>

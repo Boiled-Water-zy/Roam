@@ -93,7 +93,7 @@ func (e *sessionEvents) observe(in observeInput) []PushPayload {
 			lt := in.lastTurn(name)
 			if lt.key != "" && lt.key != st.lastTurn {
 				if lt.stop == "end_turn" && !waiting && e.seeded && time.Since(lt.at) < 10*time.Minute {
-					out = append(out, PushPayload{Type: "session.done", Session: name, Label: label, Title: label, Body: oneLine(lt.text, 1200)})
+					out = append(out, PushPayload{Type: "session.done", Session: name, Label: label, Title: label, Body: completionNoticeBody(lt.text, 1200)})
 				}
 				st.lastTurn = lt.key
 			}
@@ -114,10 +114,9 @@ func (e *sessionEvents) observe(in observeInput) []PushPayload {
 	return out
 }
 
-// oneLine 通知正文：去掉 markdown 换行和标题符，截到 max 个字
-func oneLine(s string, max int) string {
-	s = strings.NewReplacer("\n", " ", "\r", " ", "**", "", "`", "").Replace(strings.TrimSpace(s))
-	s = strings.Join(strings.Fields(s), " ")
+// Keep line boundaries so clients can distinguish a result from document headings.
+func completionNoticeBody(s string, max int) string {
+	s = strings.NewReplacer("\r\n", "\n", "\r", "\n", "**", "", "`", "").Replace(strings.TrimSpace(s))
 	if r := []rune(s); len(r) > max {
 		return string(r[:max]) + "…"
 	}

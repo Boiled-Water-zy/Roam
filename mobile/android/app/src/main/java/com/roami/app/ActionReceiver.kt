@@ -61,7 +61,7 @@ class ActionReceiver : BroadcastReceiver() {
                 if (accepted) {
                     val notifications = ctx.getSystemService(NotificationManager::class.java)
                     val current = notifications.activeNotifications.firstOrNull {
-                        it.tag == TaskNotification.tag(base) && it.id == TaskNotification.id(session) && it.notification.channelId == EventService.CH_EVENTS &&
+                        it.tag == TaskNotification.tag(base) && it.id == TaskNotification.id(session) &&
                             it.notification.extras.getString("roami.prompt") == prompt
                     }
                     if (current != null && current.notification.flags and Notification.FLAG_ONGOING_EVENT != 0) {
@@ -93,13 +93,20 @@ class ActionReceiver : BroadcastReceiver() {
             showChanged(ctx, base, session)
             return
         }
+        val active = notifications.activeNotifications.firstOrNull {
+            it.notification.extras.getString("roami.base") == base &&
+                it.notification.extras.getString("roami.session") == session &&
+                it.notification.extras.getBoolean("roami.capsule")
+        }
         val body = intent.getStringExtra("body") ?: ""
         val choices = runCatching { TaskChoice.read(JSONArray(intent.getStringExtra("choices") ?: "[]")) }.getOrDefault(emptyList())
         val notice = TaskNotification.build(ctx, base, session, title, body, TaskNoticeState.WAITING,
             if (intent.hasExtra("prompt")) emptyList() else listOf("allow", "deny"), retry = true,
             prompt = intent.getStringExtra("prompt") ?: "", choices = choices,
-            selectionMode = intent.getStringExtra("selectionMode") ?: "single")
-        notifications.notify(TaskNotification.tag(base), TaskNotification.id(session), notice)
+            selectionMode = intent.getStringExtra("selectionMode") ?: "single", capsule = active != null,
+            attentionCount = active?.notification?.extras?.getInt("roami.attentionCount", 1) ?: 1, quiet = true)
+        if (active != null) notifications.notify(active.tag, active.id, notice)
+        else notifications.notify(TaskNotification.tag(base), TaskNotification.id(session), notice)
     }
 
     private fun showChanged(ctx: Context, base: String, session: String) {

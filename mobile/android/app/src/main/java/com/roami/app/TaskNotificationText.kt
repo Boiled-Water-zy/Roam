@@ -12,6 +12,7 @@ object TaskNotificationText {
         .replace(Regex("`([^`\\n]+)`"), "$1")
         .replace(Regex("\\*\\*([^*]+)\\*\\*"), "$1")
         .replace(Regex("(?m)^\\s*(?:#{1,6}\\s+|[-*]\\s+)"), "")
+        .replace(Regex("(?<=\\s)#{1,6}\\s+"), "")
         .trim()
 
     fun summary(text: String): String {
@@ -33,11 +34,18 @@ object TaskNotificationText {
 
     fun resultDetails(body: String): String {
         val clean = plainText(body).replace(Regex("\\s+"), " ")
-        val lead = summary(body)
+        val raw = terminalText(body).trim()
+        val heading = Regex("(?m)(?:^|[ \t])#{1,6}[ \t]+").find(raw)
+        val lead = if (heading == null) summary(body) else {
+            val first = raw.substring(0, heading.range.first).ifBlank { raw.lineSequence().firstOrNull().orEmpty() }
+            val resultWords = Regex("(?i)已.{0,6}(完成|修复|生成|更新|实现|通过|构建)|做完|(?:完成|修复|实现)了|\\b(completed|fixed|implemented|updated|generated|built|passed)\\b")
+            if (resultWords.containsMatchIn(plainText(first))) summary(first) else ""
+        }
         val unverified = clean.split(Regex("(?<=[。！？])|(?<=[.!?])\\s+"))
             .firstOrNull { Regex("(?i)(未|没有|待).{0,24}(验证|测试|验收)|not (?:yet )?(?:tested|verified)|unverified").containsMatchIn(it) }
             ?.trim()
-        return if (unverified != null && !lead.contains(unverified)) "$lead\n${shorten(unverified, 100)}" else lead
+        return if (unverified != null && !lead.contains(unverified))
+            listOf(lead, shorten(unverified, 100)).filter { it.isNotBlank() }.joinToString("\n") else lead
     }
 
     fun questionDetails(body: String, choices: List<TaskChoice>): String {

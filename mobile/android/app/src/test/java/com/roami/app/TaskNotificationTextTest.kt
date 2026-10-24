@@ -41,4 +41,19 @@ class TaskNotificationTextTest {
     @Test fun terminalHyperlinksDoNotLeakEscapeSequencesIntoSummary() {
         assertEquals("已生成页面预览。", TaskNotificationText.summary("已生成\u001B]8;;https://example.test\u0007页面预览\u001B]8;;\u0007。"))
     }
+
+    @Test fun documentContentIsNotPretendedToBeAResultSummary() {
+        assertEquals("", TaskNotificationText.resultDetails("# 周报（10月19日—10月24日）\n## 本周工作\n- Blade Agent 项目进展"))
+        assertEquals("", TaskNotificationText.resultDetails("周报（10月19日—10月24日） ## 本周工作 Blade Agent 项目进展"))
+    }
+
+    @Test fun resultBeforeDocumentHeadingsRemainsReadable() {
+        assertEquals("已生成周报。", TaskNotificationText.resultDetails("已生成周报。\n\n## 本周工作\nBlade Agent 项目进展"))
+        assertEquals("已修复通知。", TaskNotificationText.resultDetails("## 已修复通知。\n\n实现细节"))
+    }
+
+    @Test fun flattenedMarkdownHeadingsDoNotLeakIntoPlainText() {
+        assertFalse(TaskNotificationText.plainText("周报 ## 本周工作 ### 项目进展").contains("#"))
+    }
+
 }

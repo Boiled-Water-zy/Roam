@@ -39,7 +39,7 @@ object TaskNotification {
     fun build(ctx: Context, base: String, session: String, title: String, body: String,
               state: TaskNoticeState, actions: List<String> = emptyList(), retry: Boolean = false,
               capsule: Boolean = false, prompt: String = "", choices: List<TaskChoice> = emptyList(),
-              selectionMode: String = "single", attentionCount: Int = 1): Notification {
+              selectionMode: String = "single", attentionCount: Int = 1, quiet: Boolean = false): Notification {
         val open = PendingIntent.getActivity(ctx, (base + session).hashCode(),
             chatIntent(ctx, base, session),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -68,7 +68,11 @@ object TaskNotification {
         }
         val result = if (retry) ctx.getString(R.string.event_action_failed, content) else content
         val detail = if (attentionCount > 1) result + "\n" + ctx.getString(R.string.event_other_tasks, attentionCount - 1) else result
-        val channel = if (capsule) EventService.CH_CAPSULE else EventService.CH_EVENTS
+        val channel = when {
+            capsule -> EventService.CH_CAPSULE
+            quiet -> EventService.CH_HISTORY
+            else -> EventService.CH_EVENTS
+        }
         val public = Notification.Builder(ctx, channel).setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(fallback).setContentText(ctx.getString(R.string.event_unlock_details))
             .setContentIntent(open).setOngoing(live).build()
@@ -84,9 +88,11 @@ object TaskNotification {
             .setPublicVersion(public)
             .setAutoCancel(!live)
             .setOngoing(live)
-            .setOnlyAlertOnce(live && !retry)
+            .setOnlyAlertOnce(quiet || live && !retry)
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setPriority(Notification.PRIORITY_HIGH)
+        if (capsule && Build.VERSION.SDK_INT >= 31)
+            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
         if (Build.VERSION.SDK_INT >= 29) builder.setAllowSystemGeneratedContextualActions(false)
         if (capsule && Build.VERSION.SDK_INT >= 36) builder.setShortCriticalText(
             if (attentionCount > 1) ctx.getString(R.string.event_pending_chip, attentionCount.coerceAtMost(99)) else status)
@@ -133,6 +139,8 @@ object TaskNotification {
             builder.addAction(Notification.Action.Builder(actionIcon, ctx.getString(R.string.event_all_tasks), all).build())
         }
         val notification = builder.build()
+        notification.extras.putBoolean("roami.capsule", capsule)
+        notification.extras.putInt("roami.attentionCount", attentionCount)
         notification.extras.putString("roami.session", session)
         notification.extras.putString("roami.base", base)
         notification.extras.putString("roami.taskState", state.name)

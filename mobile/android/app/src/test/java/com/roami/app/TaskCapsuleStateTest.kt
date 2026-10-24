@@ -36,15 +36,15 @@ class TaskCapsuleStateTest {
         assertNull(state.current(1 + TaskCapsuleState.FLASH_MS))
     }
 
-    @Test fun completionsQueueBehindApproval() {
+    @Test fun newestCompletionIsShownWithoutReplayingAQueue() {
         val state = TaskCapsuleState()
         state.onEvent(task("approval", TaskNoticeState.WAITING), 1, 1)
         state.onEvent(task("first", TaskNoticeState.FINISHED), 2, 2)
         state.onEvent(task("second", TaskNoticeState.FINISHED), 3, 3)
         assertEquals("approval", state.current(3)?.session)
         state.resolve("approval", 4)
-        assertEquals("first", state.current(4)?.session)
-        assertEquals("second", state.current(4 + TaskCapsuleState.FLASH_MS)?.session)
+        assertEquals("second", state.current(4)?.session)
+        assertNull(state.current(4 + TaskCapsuleState.FLASH_MS))
     }
 
     @Test fun failureRemainsUntilAcknowledgedOrTaskResumes() {
@@ -109,4 +109,25 @@ class TaskCapsuleStateTest {
         state.onSnapshot(listOf(question), 2)
         assertEquals(question, state.current(2))
     }
+
+    @Test fun latestCompletionImmediatelyUpdatesTheCapsule() {
+        val state = TaskCapsuleState()
+        state.onEvent(task("first", TaskNoticeState.FINISHED), 1, 1)
+        state.onEvent(task("second", TaskNoticeState.FINISHED), 2, 10_001)
+        assertEquals("second", state.current(10_001)?.session)
+        assertEquals(listOf("second", "first"), state.pending(10_001).map { it.session })
+        assertEquals("second", state.current(15_001)?.session)
+        assertNull(state.current(25_001))
+    }
+
+    @Test fun oldCompletionsAreNotPromotedAfterALongApproval() {
+        val state = TaskCapsuleState()
+        state.onEvent(task("approval", TaskNoticeState.WAITING), 1, 1)
+        state.onEvent(task("done", TaskNoticeState.FINISHED), 2, 2)
+        assertEquals(TaskCapsuleState.FLASH_MS, state.nextChangeDelay(2))
+        state.resolve("approval", 60_000)
+        assertNull(state.current(60_000))
+        assertEquals(emptyList<CapsuleTask>(), state.pending(60_000))
+    }
+
 }

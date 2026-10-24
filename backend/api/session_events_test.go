@@ -154,8 +154,8 @@ func TestSessionEventsDone(t *testing.T) {
 	}
 	turn3 := lastTurnInfo{key: "u3", stop: "end_turn", text: "**做完了**\n\n改了三处", at: time.Now()}
 	got := ev.observe(in("$ ", turn3))
-	if len(got) != 1 || got[0].Type != "session.done" || got[0].Body != "做完了 改了三处" {
-		t.Fatalf("新 end_turn 该推一条 done，正文去掉 markdown: %+v", got)
+	if len(got) != 1 || got[0].Type != "session.done" || got[0].Body != "做完了\n\n改了三处" {
+		t.Fatalf("新 end_turn 该推一条 done，正文保留段落并去掉强调标记: %+v", got)
 	}
 	turn4 := lastTurnInfo{key: "u4", stop: "end_turn", text: "要不要继续？", at: time.Now()}
 	ev.observe(in(waitScreen, turn4))

@@ -111,6 +111,11 @@ class EventService : Service() {
         nm.createNotificationChannel(NotificationChannel(CH_CAPSULE, getString(R.string.ch_capsule), NotificationManager.IMPORTANCE_DEFAULT).apply {
             setShowBadge(false)
         })
+        nm.createNotificationChannel(NotificationChannel(CH_HISTORY, getString(R.string.ch_task_history), NotificationManager.IMPORTANCE_LOW).apply {
+            setSound(null, null)
+            enableVibration(false)
+            setShowBadge(false)
+        })
         nm.createNotificationChannel(NotificationChannel(CH_ATTENTION, getString(R.string.ch_attention), NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(true) })
     }
 
@@ -132,13 +137,17 @@ class EventService : Service() {
                 val n = TaskNotification.build(this, base, task.session, task.title, task.body,
                     task.state, task.actions, capsule = true, prompt = task.prompt, choices = task.choices,
                     selectionMode = task.selectionMode, attentionCount = tasks.size)
+                val previous = displayedCapsule
+                getSystemService(NotificationManager::class.java).cancel(TaskNotification.tag(base), TaskNotification.id(task.session))
                 foreground(NOTIF_CAPSULE, n)
                 displayedCapsule = task
+                archiveCapsule(previous, task, tasks)
                 displayedCount = tasks.size
             }
             return
         }
         if (displayedCapsule == null && linkText.isEmpty()) return
+        val previous = displayedCapsule
         displayedCapsule = null
         displayedCount = 0
         val stop = PendingIntent.getService(this, 0, Intent(this, EventService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
@@ -148,6 +157,16 @@ class EventService : Service() {
             .setContentIntent(open).addAction(0, getString(R.string.link_stop), stop)
             .setOngoing(true).setPriority(NotificationCompat.PRIORITY_MIN).setSilent(true).build()
         foreground(NOTIF_LINK, n)
+        archiveCapsule(previous, null, tasks)
+    }
+
+    private fun archiveCapsule(previous: CapsuleTask?, current: CapsuleTask?, pending: List<CapsuleTask>) {
+        if (!TaskNoticeDelivery.retainHistory(previous, current, pending)) return
+        previous ?: return
+        val notice = TaskNotification.build(this, base, previous.session, previous.title, previous.body,
+            previous.state, previous.actions, prompt = previous.prompt, choices = previous.choices,
+            selectionMode = previous.selectionMode, quiet = true)
+        getSystemService(NotificationManager::class.java).notify(TaskNotification.tag(base), TaskNotification.id(previous.session), notice)
     }
 
     private fun foreground(id: Int, n: Notification) {
@@ -241,9 +260,12 @@ class EventService : Service() {
                         receipt(o.optLong("id"), "blocked", session)
                         return@post
                     }
-                    val notice = TaskNotification.build(localized, base, session, title, body, state, actions, prompt = prompt, choices = choices,
-                        selectionMode = selectionMode, attentionCount = capsuleState.pending(now).size)
-                    getSystemService(NotificationManager::class.java).notify(TaskNotification.tag(base), TaskNotification.id(session), notice)
+                    if (TaskNoticeDelivery.postSeparate(session, displayedCapsule)) {
+                        val notice = TaskNotification.build(localized, base, session, title, body, state, actions, prompt = prompt, choices = choices,
+                            selectionMode = selectionMode, attentionCount = capsuleState.pending(now).size,
+                            quiet = Build.VERSION.SDK_INT >= 36)
+                        getSystemService(NotificationManager::class.java).notify(TaskNotification.tag(base), TaskNotification.id(session), notice)
+                    }
                     Prefs(this).saveTaskEvents(base, eventRecovery)
                     receipt(o.optLong("id"), "posted", session)
                 } catch (error: Exception) {
@@ -362,7 +384,7 @@ class EventService : Service() {
         val waitingIds = waiting.map { TaskNotification.id(it.session) }.toSet()
         val nm = getSystemService(NotificationManager::class.java)
         nm.activeNotifications.filter {
-            it.tag == TaskNotification.tag(base) && it.notification.channelId == CH_EVENTS && it.notification.flags and Notification.FLAG_ONGOING_EVENT != 0 && it.id !in waitingIds
+            it.tag == TaskNotification.tag(base) && it.notification.channelId in setOf(CH_EVENTS, CH_HISTORY) && it.notification.flags and Notification.FLAG_ONGOING_EVENT != 0 && it.id !in waitingIds
         }.forEach { nm.cancel(it.tag, it.id) }
         capsuleState.onSnapshot(waiting, now, snapshot.runningItems.map { it.name }.toSet(), live)
         renderForeground()
@@ -389,6 +411,7 @@ class EventService : Service() {
         const val CH_LINK = "link_v2"
         const val CH_EVENTS = "events_v2"
         const val CH_CAPSULE = "capsule_v1"
+        const val CH_HISTORY = "task_history_v1"
         const val CH_ATTENTION = "attention"
         const val NOTIF_LINK = 1
         const val NOTIF_ATTENTION = 2
